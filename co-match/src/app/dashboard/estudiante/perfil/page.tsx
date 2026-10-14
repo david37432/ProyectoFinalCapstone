@@ -2,6 +2,9 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import PerfilContent from './PerfilContent'
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default async function PerfilPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -10,10 +13,10 @@ export default async function PerfilPage() {
     redirect('/auth/login')
   }
 
-  // Obtener perfil de public.profiles
+  // Obtener perfil de public.profiles con TODAS las columnas
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('id, full_name, email, avatar_url, role, career, experience, availability_hours, created_at, updated_at')
+    .select('id, full_name, email, avatar_url, role, career, experience, availability_hours, phone, student_code, semester, focus, gpa, skills, interests, created_at, updated_at')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -23,7 +26,7 @@ export default async function PerfilPage() {
     const { data: created, error: createError } = await supabase
       .from('profiles')
       .upsert({ id: user.id, email: user.email, role: 'estudiante' }, { onConflict: 'id' })
-      .select('id, full_name, email, avatar_url, role, career, experience, availability_hours, created_at, updated_at')
+      .select('id, full_name, email, avatar_url, role, career, experience, availability_hours, phone, student_code, semester, focus, gpa, skills, interests, created_at, updated_at')
       .single()
 
     if (createError || !created) {
@@ -39,15 +42,15 @@ export default async function PerfilPage() {
     email: user.email || '',
     full_name: profileData?.full_name || user.user_metadata?.full_name || '',
     role: profileData?.role || user.user_metadata?.role || 'estudiante',
-    phone: '',
-    student_code: '',
+    phone: profileData?.phone || '',
+    student_code: profileData?.student_code || '',
     career: profileData?.career || null,
-    semester: undefined,
-    focus: '',
-    gpa: undefined,
-    availability_hours: profileData?.availability_hours || null,
-    skills: [],
-    interests: [],
+    semester: profileData?.semester ?? null,
+    focus: profileData?.focus || '',
+    gpa: profileData?.gpa ?? null,
+    availability_hours: profileData?.availability_hours ?? null,
+    skills: profileData?.skills || [],
+    interests: profileData?.interests || [],
     experience: profileData?.experience || '',
     completion: 0,
     avatar_url: profileData?.avatar_url || null,

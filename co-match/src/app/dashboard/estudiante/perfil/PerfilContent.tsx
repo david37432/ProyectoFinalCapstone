@@ -12,9 +12,9 @@ interface ProfileData {
   phone?: string
   student_code?: string
   career: string | null
-  semester?: number
+  semester: number | null
   focus?: string
-  gpa?: number
+  gpa: number | null
   availability_hours: number | null
   skills: string[]
   interests: string[]
@@ -47,9 +47,9 @@ const getDefaultProfile = (): ProfileData => ({
   phone: '',
   student_code: '',
   career: null,
-  semester: undefined,
+  semester: null,
   focus: '',
-  gpa: undefined,
+  gpa: null,
   availability_hours: null,
   skills: [],
   interests: [],
@@ -97,10 +97,20 @@ export default function PerfilContent({ initialProfile, userId }: PerfilContentP
 
     const payload = {
       full_name: profile.full_name,
+      phone: profile.phone || '',
+      student_code: profile.student_code || '',
       career: profile.career || '',
-      experience: profile.experience || '',
+      semester: profile.semester === undefined ? null : profile.semester,
+      focus: profile.focus || '',
+      gpa: profile.gpa === undefined ? null : profile.gpa,
       availability_hours: profile.availability_hours ?? null,
+      skills: profile.skills,
+      interests: profile.interests,
+      experience: profile.experience || '',
+      avatar_url: profile.avatar_url || null,
     };
+
+    console.log("👉 PAYLOAD ENVIADO DESDE EL NAVEGADOR:", payload);
 
     startTransition(async () => {
       const result: UpdateProfileResult = await updateStudentProfile(payload);

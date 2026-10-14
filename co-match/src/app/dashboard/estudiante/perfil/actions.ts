@@ -6,9 +6,19 @@ import { revalidatePath } from 'next/cache';
 
 export interface StudentProfileInput {
   full_name: string;
+  phone: string;
+  student_code: string;
   career: string;
-  experience: string;
+  semester: number | null;
+  focus: string;
+  gpa: number | null;
   availability_hours: number | null;
+  skills: string[];
+  interests: string[];
+  experience: string;
+  avatar_url: string | null;
+  habilidades?: string[] | string;
+  intereses?: string[] | string;
 }
 
 export interface Profile {
@@ -16,16 +26,24 @@ export interface Profile {
   email: string;
   full_name: string;
   role: string;
+  phone: string;
+  student_code: string;
   career: string | null;
-  experience: string | null;
+  semester: number | null;
+  focus: string;
+  gpa: number | null;
   availability_hours: number | null;
+  skills: string[];
+  interests: string[];
+  experience: string | null;
+  completion: number;
   avatar_url: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export type UpdateProfileResult =
-  | { success: true; data: Profile }
+  | { success: true; data: Profile; message: string }
   | { success: false; error: string };
 
 export async function updateStudentProfile(payload: StudentProfileInput): Promise<UpdateProfileResult> {
@@ -57,17 +75,35 @@ export async function updateStudentProfile(payload: StudentProfileInput): Promis
   }
 
   try {
+    // Log para debugging
+    console.log("👉 KEYS RECIBIDAS EN SERVER ACTION:", Object.keys(payload));
+    console.log("👉 SKILLS RECIBIDAS:", payload.skills);
+    console.log("👉 INTERESTS RECIBIDOS:", payload.interests);
+
+    // Normalizar arrays
+    const skillsArray = Array.isArray(payload.skills) ? payload.skills : [];
+    const interestsArray = Array.isArray(payload.interests) ? payload.interests : [];
+
     const profilePayload = {
       id: user.id,
       email: user.email,
-      full_name: payload.full_name,
-      career: payload.career,
-      experience: payload.experience,
-      availability_hours: payload.availability_hours,
+      role: 'estudiante',
+      full_name: payload.full_name || '',
+      phone: payload.phone || '',
+      student_code: payload.student_code || '',
+      career: payload.career || '',
+      semester: payload.semester ? Number(payload.semester) : null,
+      focus: payload.focus || '',
+      gpa: payload.gpa ? Number(payload.gpa) : null,
+      availability_hours: Number(payload.availability_hours || 0),
+      skills: skillsArray,
+      interests: interestsArray,
+      experience: payload.experience || '',
+      avatar_url: payload.avatar_url || null,
       updated_at: new Date().toISOString(),
     };
 
-    const { data, error } = await supabase
+    const { data: savedProfile, error } = await supabase
       .from('profiles')
       .upsert(profilePayload, {
         onConflict: 'id',
@@ -77,19 +113,16 @@ export async function updateStudentProfile(payload: StudentProfileInput): Promis
       .single();
 
     if (error) {
-      console.error('Error upserting profile:', {
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint,
-      });
-      return { success: false, error: 'No se pudo guardar el perfil' };
+      console.error("❌ ERROR SUPABASE UPSERT:", error);
+      return { success: false, error: error.message };
     }
 
-    revalidatePath('/dashboard/estudiante/perfil');
-    revalidatePath('/dashboard/estudiante');
+    console.log("✅ DATO GUARDADO EN SUPABASE (SAVED_PROFILE):", savedProfile);
 
-    return { success: true, data: data as Profile };
+    revalidatePath('/dashboard/estudiante/perfil', 'page');
+    revalidatePath('/dashboard/estudiante/explorar', 'page');
+
+    return { success: true, data: savedProfile as Profile, message: 'Perfil actualizado correctamente' };
   } catch (err) {
     console.error('Unexpected error updating profile:', err);
     return { success: false, error: 'Error inesperado al actualizar perfil' };
