@@ -3,15 +3,22 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/client';
+import { registerAction, type RegisterPayload } from './actions';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const supabase = createClient();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState(1);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    email: string;
+    password: string;
+    confirmPassword: string;
+    full_name: string;
+    document_number: string;
+    phone: string;
+    role: 'postulante' | 'reclutador';
+  }>({
     email: '',
     password: '',
     confirmPassword: '',
@@ -44,63 +51,27 @@ export default function RegisterPage() {
 
     setIsLoading(true);
 
-    const { data, error: signUpError } = await supabase.auth.signUp({
+    const payload: RegisterPayload = {
       email: formData.email,
       password: formData.password,
-      options: {
-        data: {
-          full_name: formData.full_name,
-          document_number: formData.document_number,
-          phone: formData.phone,
-          role: formData.role,
-        },
-      },
-    });
+      full_name: formData.full_name,
+      document_number: formData.document_number,
+      phone: formData.phone,
+      role: formData.role,
+    };
 
-    if (signUpError) {
-      setError(signUpError.message);
+    const result = await registerAction(payload);
+
+    if (!result.success) {
+      setError(result.error || 'Error al crear la cuenta');
       setIsLoading(false);
       return;
     }
 
-    if (!data.user) {
-      setError('Error al crear la cuenta');
-      setIsLoading(false);
-      return;
-    }
-
-    if (data.user.identities?.length === 0) {
-      setError('Este correo ya está registrado');
-      setIsLoading(false);
-      return;
-    }
-
-    // Crear/actualizar perfil en la tabla profiles usando upsert
-    const roleForProfile = formData.role === 'reclutador' ? 'dependencia' : 'estudiante';
-    
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .upsert({
-        id: data.user.id,
-        email: formData.email,
-        full_name: formData.full_name,
-        role: roleForProfile,
-      }, {
-        onConflict: 'id',
-        ignoreDuplicates: false
-      });
-
-    if (profileError) {
-      console.warn('Profile upsert warning (non-blocking):', profileError.message);
-      // No interrumpir el flujo del usuario, el trigger de BD también crea el perfil
-    }
-
-    router.refresh();
-    // Redirigir según el rol seleccionado
-    if (formData.role === 'postulante') {
-      router.push('/dashboard/estudiante/explorar');
+    if (result.redirectTo) {
+      router.push(result.redirectTo);
     } else {
-      router.push('/dashboard/dependencia');
+      router.refresh();
     }
   };
 
@@ -115,9 +86,7 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-neutral-50 px-4 py-12">
       <div className="w-full max-w-md">
-        {/* Tarjeta principal con layout vertical */}
         <div className="bg-white rounded-xl border border-neutral-200 p-8">
-          {/* Encabezado institucional - Ocupa todo el ancho, arriba del título */}
           <div className="text-center mb-8 border-b border-neutral-200 pb-6">
             <Link href="/" className="inline-flex items-center gap-2 mb-4" aria-label="CO-MATCH Home">
               <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
@@ -125,19 +94,16 @@ export default function RegisterPage() {
               </div>
               <span className="font-bold text-2xl text-neutral-900">CO-MATCH</span>
             </Link>
-            {/* Leyenda institucional - Ancho completo, arriba del título */}
             <p className="text-sm text-neutral-500 w-full text-center">
               Universidad de La Sabana - Programa Aprende Trabajando (PAT)
             </p>
           </div>
 
-          {/* Título del formulario */}
           <div className="text-center mb-8">
             <h1 className="text-2xl font-bold text-neutral-900">Crear cuenta</h1>
             <p className="text-neutral-600 mt-2">Únete a la plataforma de talento de la Universidad de La Sabana</p>
           </div>
 
-          {/* Indicador de pasos */}
           <div className="mb-8">
             <div className="flex items-center justify-center gap-2">
               <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium ${step === 1 ? 'bg-primary text-white' : 'bg-neutral-200 text-neutral-500'}`}>
@@ -162,7 +128,6 @@ export default function RegisterPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {step === 1 && (
               <>
-                {/* Email - Label arriba, Input abajo */}
                 <div>
                   <label htmlFor="email" className="block text-sm font-medium text-neutral-700 mb-1.5">
                     Correo institucional
@@ -185,7 +150,6 @@ export default function RegisterPage() {
                   />
                 </div>
 
-                {/* Password - Label arriba, Input abajo */}
                 <div>
                   <label htmlFor="password" className="block text-sm font-medium text-neutral-700 mb-1.5">
                     Contraseña
@@ -227,7 +191,6 @@ export default function RegisterPage() {
                   </div>
                 </div>
 
-                {/* Confirm Password - Label arriba, Input abajo */}
                 <div>
                   <label htmlFor="confirmPassword" className="block text-sm font-medium text-neutral-700 mb-1.5">
                     Confirmar contraseña
@@ -269,7 +232,6 @@ export default function RegisterPage() {
                   </div>
                 </div>
 
-                {/* Role Select - Label arriba, Select abajo */}
                 <div>
                   <label htmlFor="role" className="block text-sm font-medium text-neutral-700 mb-1.5">
                     Tipo de usuario
@@ -278,7 +240,7 @@ export default function RegisterPage() {
                     id="role"
                     name="role"
                     value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value as 'postulante' | 'reclutador' })}
                     required
                     disabled={isLoading}
                     className="w-full px-4 py-2.5 rounded-lg border bg-white text-neutral-900
@@ -297,7 +259,6 @@ export default function RegisterPage() {
 
             {step === 2 && (
               <>
-                {/* Full Name - Label arriba, Input abajo */}
                 <div>
                   <label htmlFor="full_name" className="block text-sm font-medium text-neutral-700 mb-1.5">
                     Nombre completo
@@ -320,7 +281,6 @@ export default function RegisterPage() {
                   />
                 </div>
 
-                {/* Document Number - Label arriba, Input abajo */}
                 <div>
                   <label htmlFor="document_number" className="block text-sm font-medium text-neutral-700 mb-1.5">
                     Número de documento
@@ -342,7 +302,6 @@ export default function RegisterPage() {
                   />
                 </div>
 
-                {/* Phone - Label arriba, Input abajo */}
                 <div>
                   <label htmlFor="phone" className="block text-sm font-medium text-neutral-700 mb-1.5">
                     Teléfono

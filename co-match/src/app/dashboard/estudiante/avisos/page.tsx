@@ -7,6 +7,7 @@ export default async function AvisosPage() {
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
+    console.log("🚨 REDIRECCIÓN DISPARADA DESDE: src/app/dashboard/estudiante/avisos/page.tsx");
     redirect('/auth/login');
   }
 

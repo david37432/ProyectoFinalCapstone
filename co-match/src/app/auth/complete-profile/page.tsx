@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -32,7 +31,6 @@ const mockSkills = [
 ];
 
 export default function CompleteProfilePage() {
-  const router = useRouter();
   const supabase = createClient();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -79,7 +77,7 @@ export default function CompleteProfilePage() {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      router.push('/auth/login');
+      // El middleware ya maneja la redirección si no hay usuario autenticado
       return;
     }
 
@@ -121,28 +119,32 @@ export default function CompleteProfilePage() {
       .update({ is_profile_complete: true })
       .eq('id', user.id);
 
-    router.refresh();
-    // Redirect based on role
+await supabase
+      .from('users')
+      .update({ is_profile_complete: true })
+      .eq('id', user.id);
+
+    // Redirect based on role using window.location.href for clean navigation
     const { data: userData } = await supabase
       .from('users')
       .select('role_id')
       .eq('id', user.id)
       .single();
-    
+     
     if (userData?.role_id) {
       const { data: role } = await supabase
         .from('roles')
         .select('name')
         .eq('id', userData.role_id)
         .single();
-      
+       
       if (['reclutador', 'jefe_area', 'admin'].includes(role?.name || '')) {
-        router.push('/dashboard/dependencia');
+        window.location.href = '/dashboard/dependencia';
       } else {
-        router.push('/dashboard/estudiante/explorar');
+        window.location.href = '/dashboard/estudiante/explorar';
       }
     } else {
-      router.push('/dashboard/estudiante/explorar');
+      window.location.href = '/dashboard/estudiante/explorar';
     }
   };
 
@@ -283,7 +285,7 @@ export default function CompleteProfilePage() {
           </CardContent>
 
           <CardFooter className="justify-end gap-3">
-            <Button variant="secondary" onClick={() => router.back()} disabled={saving}>
+            <Button variant="secondary" onClick={() => window.history.back()} disabled={saving}>
               Omitir por ahora
             </Button>
             <Button variant="primary" onClick={handleSave} isLoading={saving} disabled={!formData.birth_date || !formData.city || !formData.education_level || !formData.professional_summary || !formData.availability_hours_per_week}>

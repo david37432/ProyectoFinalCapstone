@@ -3,6 +3,9 @@ import { DependenciaDashboardClient } from './DependenciaDashboardClient'
 import { getAdminMetrics, getVacanciesWithDetails, getTopCandidates, getUserProfile } from '@/lib/supabase/admin-queries'
 import type { AdminMetrics, VacancyWithDetails, TopCandidate } from '@/lib/supabase/admin-queries'
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default async function DependenciaDashboardPage() {
   const user = await requireAdmin()
   

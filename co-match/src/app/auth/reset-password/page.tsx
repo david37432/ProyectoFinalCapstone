@@ -52,9 +52,6 @@ function ResetPasswordContent() {
     }
 
     setSuccess(true);
-    setTimeout(() => {
-      router.push('/auth/login');
-    }, 2000);
   };
 
   if (!sessionChecked) {

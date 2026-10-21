@@ -38,8 +38,10 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
 Card.displayName = 'Card';
 
 export const CardHeader = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('mb-4', className)} {...props} />
+  ({ className, children, ...props }, ref) => (
+    <div ref={ref} className={cn('mb-4', className)} {...props}>
+      {children}
+    </div>
   )
 );
 

@@ -2,8 +2,8 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
+  let response = NextResponse.next({
+    request: { headers: request.headers }
   })
 
   const supabase = createServerClient(
@@ -11,104 +11,60 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
       cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
+        getAll() { return request.cookies.getAll(); },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            request.cookies.set(name, value)
-          )
-          supabaseResponse = NextResponse.next({
-            request,
-          })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
+          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value));
+          response = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
         },
       },
     }
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  const url = request.nextUrl.clone()
 
-  const pathname = request.nextUrl.pathname
-
-  const isAuthRoute = pathname.startsWith('/auth')
-  const isApiRoute = pathname.startsWith('/api')
-  const isStaticAsset = pathname.startsWith('/_next') || pathname.startsWith('/favicon.ico')
-
-  const isAuthNoRedirectRoute = pathname === '/auth/login' || pathname === '/auth/register'
-
-  const isAuthExceptionRoute = pathname === '/auth/reset-password' || pathname === '/auth/callback'
-
-  if (isApiRoute || isStaticAsset) {
-    return supabaseResponse
-  }
-
-  if (!user && !isAuthRoute) {
-    const url = request.nextUrl.clone()
+  // Si no hay usuario y quiere entrar a rutas protegidas
+  if (!user && url.pathname.startsWith('/dashboard')) {
+    console.log(`[Middleware] ❌ Usuario no autenticado intentando acceder a: ${url.pathname}`)
     url.pathname = '/auth/login'
     return NextResponse.redirect(url)
   }
 
-  if (isAuthExceptionRoute) {
-    return supabaseResponse
-  }
+  // Si hay usuario autenticado intentando entrar a /dashboard/dependencia
+  if (user && url.pathname.startsWith('/dashboard/dependencia')) {
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role, full_name')
+      .eq('id', user.id)
+      .single()
 
-  if (user) {
-    if (isAuthNoRedirectRoute) {
-      return supabaseResponse
-    }
+    console.log(`[Middleware] 👤 Usuario: ${user.email} | Rol detectado: "${profile?.role}" | Error Profile:`, profileError?.message || 'Ninguno')
 
-    let profile: { role: string; is_active?: boolean } | null = null;
-    let profileError: Error | null = null;
-
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('role, is_active')
-        .eq('id', user.id)
-        .maybeSingle();
-      profileError = error;
-      if (data) {
-        profile = {
-          role: data.role ?? 'estudiante',
-          is_active: data.is_active ?? true,
-        };
+    // Si la consulta falla o el rol no es autorizado
+    const allowedRoles = ['dependencia', 'pat', 'admin']
+    if (!profile || !allowedRoles.includes(profile.role)) {
+      console.warn(`[Middleware] ⚠️ Acceso denegado a ${url.pathname} para el rol "${profile?.role}". Redirigiendo...`)
+      
+      if (profile?.role === 'estudiante') {
+        url.pathname = '/dashboard/estudiante/explorar'
+        return NextResponse.redirect(url)
       }
-    } catch (err) {
-      profileError = err as Error;
-    }
+      
+      // Si el perfil no existe aun pero el usuario está autenticado, no redirigir a login para evitar bucles
+      if (!profile) {
+        console.log("[Middleware] Perfil aún no creado en profiles. Permitiendo paso temporal.")
+        return response
+      }
 
-    if (profileError || !profile) {
-      return supabaseResponse;
-    }
-
-    if (profile.is_active === false) {
-      await supabase.auth.signOut()
-      const url = request.nextUrl.clone()
       url.pathname = '/auth/login'
       return NextResponse.redirect(url)
     }
-
-    if (isAuthRoute) {
-      const url = request.nextUrl.clone()
-      if (profile.role === 'estudiante') {
-        url.pathname = '/dashboard/estudiante/explorar'
-      } else {
-        url.pathname = '/dashboard/dependencia'
-      }
-      return NextResponse.redirect(url)
-    }
   }
 
-  return supabaseResponse
+  return response
 }
 
 export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
-  ],
+  matcher: ['/dashboard/:path*'],
 }

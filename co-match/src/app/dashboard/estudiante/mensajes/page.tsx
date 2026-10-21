@@ -30,6 +30,7 @@ export default async function MessagesPage() {
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
+    console.log("🚨 REDIRECCIÓN DISPARADA DESDE: src/app/dashboard/estudiante/mensajes/page.tsx");
     redirect('/auth/login');
   }
 

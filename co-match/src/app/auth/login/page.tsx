@@ -1,12 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { loginAction } from './actions';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({
@@ -32,11 +30,9 @@ export default function LoginPage() {
       return;
     }
 
-    if (result.redirectTo) {
-      router.push(result.redirectTo);
-    } else {
-      router.refresh();
-    }
+    // El Server Action ya maneja la redirección con redirect() y cookies
+    // No necesitamos router.push aquí - el Server Action hace redirect()
+    // y el navegador recargará la página con las cookies actualizadas
   };
 
   return (

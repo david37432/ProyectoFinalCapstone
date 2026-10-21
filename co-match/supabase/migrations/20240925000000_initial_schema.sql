@@ -238,6 +238,300 @@ CREATE INDEX idx_application_status_history_application_id ON application_status
 CREATE INDEX idx_documents_application_id ON documents(application_id);
 
 -- ============================================================================
+-- H. SEGUIMIENTO DE PROYECTOS (MILESTONES & PROGRESO)
+-- ============================================================================
+
+-- Tabla de Hitos del Proyecto
+CREATE TABLE project_milestones (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    application_id UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    order_index INTEGER NOT NULL DEFAULT 0,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed')),
+    planned_date TIMESTAMPTZ,
+    completed_date TIMESTAMPTZ,
+    started_date TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(application_id, order_index)
+);
+
+-- Tabla de Registro de Horas
+CREATE TABLE project_hours (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    application_id UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    hours NUMERIC(5,2) NOT NULL CHECK (hours > 0),
+    description TEXT,
+    logged_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tabla de Evaluación Final
+CREATE TABLE project_evaluations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    application_id UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+    dependency_rating INTEGER CHECK (dependency_rating BETWEEN 1 AND 5),
+    candidate_rating INTEGER CHECK (candidate_rating BETWEEN 1 AND 5),
+    dependency_feedback TEXT,
+    candidate_feedback TEXT,
+    satisfaction_rating NUMERIC(3,2) CHECK (satisfaction_rating BETWEEN 0 AND 5),
+    evaluated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(application_id)
+);
+
+-- Índices para project_milestones
+CREATE INDEX idx_project_milestones_application_id ON project_milestones(application_id);
+CREATE INDEX idx_project_milestones_status ON project_milestones(status);
+CREATE INDEX idx_project_milestones_order ON project_milestones(application_id, order_index);
+
+-- Índices para project_hours
+CREATE INDEX idx_project_hours_application_id ON project_hours(application_id);
+CREATE INDEX idx_project_hours_user_id ON project_hours(user_id);
+CREATE INDEX idx_project_hours_logged_date ON project_hours(logged_date);
+
+-- Índices para project_evaluations
+CREATE INDEX idx_project_evaluations_application_id ON project_evaluations(application_id);
+
+-- Trigger para actualizar updated_at en project_milestones
+CREATE TRIGGER update_project_milestones_updated_at BEFORE UPDATE ON project_milestones FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Función para inicializar hitos por defecto al aceptar una postulación
+CREATE OR REPLACE FUNCTION initialize_default_milestones()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' AND OLD.status != 'aceptada' AND NEW.status = 'aceptada' THEN
+        INSERT INTO project_milestones (application_id, title, description, order_index, status, planned_date) VALUES
+            (NEW.id, 'Inicio del proyecto', 'Configuración e inducción del estudiante en el proyecto', 1, 'in_progress', NOW() + INTERVAL '7 days'),
+            (NEW.id, 'Análisis del proceso actual', 'Levantamiento de requerimientos y mapa de proceso', 2, 'pending', NOW() + INTERVAL '21 days'),
+            (NEW.id, 'Desarrollo de la solución', 'Construcción del script, bot o flujo automatizado', 3, 'pending', NOW() + INTERVAL '49 days'),
+            (NEW.id, 'Pruebas y ajustes', 'Validación de datos y pruebas de usuario', 4, 'pending', NOW() + INTERVAL '63 days'),
+            (NEW.id, 'Entrega y capacitación', 'Despliegue y entrenamiento al personal de la dependencia', 5, 'pending', NOW() + INTERVAL '77 days'),
+            (NEW.id, 'Cierre y evaluación final', 'Medición de impacto y calificación', 6, 'pending', NOW() + INTERVAL '91 days');
+    END IF;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER trigger_initialize_milestones
+    AFTER UPDATE ON applications
+    FOR EACH ROW
+    EXECUTE FUNCTION initialize_default_milestones();
+
+-- Políticas RLS para project_milestones
+ALTER TABLE project_milestones ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Dependencia ve hitos de sus aplicaciones" ON project_milestones
+    FOR SELECT USING (
+        application_id IN (
+            SELECT id FROM applications a
+            JOIN vacancies v ON v.id = a.vacancy_id
+            WHERE v.created_by = auth.uid()
+        )
+    );
+
+CREATE POLICY "Candidato ve sus propios hitos" ON project_milestones
+    FOR SELECT USING (
+        application_id IN (
+            SELECT id FROM applications WHERE candidate_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Dependencia actualiza hitos de sus aplicaciones" ON project_milestones
+    FOR UPDATE USING (
+        application_id IN (
+            SELECT id FROM applications a
+            JOIN vacancies v ON v.id = a.vacancy_id
+            WHERE v.created_by = auth.uid()
+        )
+    );
+
+-- Políticas RLS para project_hours
+ALTER TABLE project_hours ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Participantes ven horas del proyecto" ON project_hours
+    FOR SELECT USING (
+        application_id IN (
+            SELECT id FROM applications WHERE candidate_id = auth.uid()
+            UNION
+            SELECT id FROM applications a
+            JOIN vacancies v ON v.id = a.vacancy_id
+            WHERE v.created_by = auth.uid()
+        )
+    );
+
+CREATE POLICY "Candidato registra sus horas" ON project_hours
+    FOR INSERT WITH CHECK (
+        user_id = auth.uid()
+        AND application_id IN (SELECT id FROM applications WHERE candidate_id = auth.uid())
+    );
+
+-- Políticas RLS para project_evaluations
+ALTER TABLE project_evaluations ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Participantes ven evaluación del proyecto" ON project_evaluations
+    FOR SELECT USING (
+        application_id IN (
+            SELECT id FROM applications WHERE candidate_id = auth.uid()
+            UNION
+            SELECT id FROM applications a
+            JOIN vacancies v ON v.id = a.vacancy_id
+            WHERE v.created_by = auth.uid()
+        )
+    );
+
+CREATE POLICY "Dependencia evalúa proyecto" ON project_evaluations
+    FOR INSERT WITH CHECK (
+        application_id IN (
+            SELECT id FROM applications a
+            JOIN vacancies v ON v.id = a.vacancy_id
+            WHERE v.created_by = auth.uid()
+        )
+    );
+
+CREATE POLICY "Dependencia actualiza su evaluación" ON project_evaluations
+    FOR UPDATE USING (
+        application_id IN (
+            SELECT id FROM applications a
+            JOIN vacancies v ON v.id = a.vacancy_id
+            WHERE v.created_by = auth.uid()
+        )
+    );
+
+-- ============================================================================
+-- E. EVALUACIÓN, ENTREVISTAS Y PRUEBAS TÉCNICAS
+-- ============================================================================
+-- G. CONVERSACIONES Y MENSAJERÍA EN TIEMPO REAL
+-- ============================================================================
+
+-- Tabla de Conversaciones
+CREATE TABLE conversations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    vacancy_id UUID NOT NULL REFERENCES vacancies(id) ON DELETE CASCADE,
+    dependency_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    candidate_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    subject VARCHAR(200),
+    last_message TEXT,
+    last_message_at TIMESTAMPTZ DEFAULT NOW(),
+    last_message_by UUID REFERENCES users(id),
+    unread_dependency_count INTEGER DEFAULT 0,
+    unread_candidate_count INTEGER DEFAULT 0,
+    is_archived_dependency BOOLEAN DEFAULT FALSE,
+    is_archived_candidate BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(vacancy_id, candidate_id)
+);
+
+-- Tabla de Mensajes
+CREATE TABLE messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    message_type VARCHAR(20) DEFAULT 'text' CHECK (message_type IN ('text', 'file', 'system')),
+    file_url VARCHAR(500),
+    file_name VARCHAR(255),
+    file_size INTEGER,
+    is_read BOOLEAN DEFAULT FALSE,
+    read_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Índices para conversaciones
+CREATE INDEX idx_conversations_vacancy_id ON conversations(vacancy_id);
+CREATE INDEX idx_conversations_dependency_id ON conversations(dependency_id);
+CREATE INDEX idx_conversations_candidate_id ON conversations(candidate_id);
+CREATE INDEX idx_conversations_last_message_at ON conversations(last_message_at DESC);
+CREATE INDEX idx_conversations_unread_dependency ON conversations(unread_dependency_count) WHERE unread_dependency_count > 0;
+
+-- Índices para mensajes
+CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
+CREATE INDEX idx_messages_sender_id ON messages(sender_id);
+CREATE INDEX idx_messages_created_at ON messages(created_at);
+CREATE INDEX idx_messages_is_read ON messages(is_read) WHERE is_read = FALSE;
+
+-- Trigger para actualizar last_message_at en conversaciones
+CREATE OR REPLACE FUNCTION update_conversation_last_message()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE conversations
+    SET last_message = NEW.content,
+        last_message_at = NEW.created_at,
+        last_message_by = NEW.sender_id,
+        unread_dependency_count = CASE 
+            WHEN NEW.sender_id != conversations.dependency_id THEN conversations.unread_dependency_count + 1
+            ELSE conversations.unread_dependency_count
+        END,
+        unread_candidate_count = CASE 
+            WHEN NEW.sender_id != conversations.candidate_id THEN conversations.unread_candidate_count + 1
+            ELSE conversations.unread_candidate_count
+        END,
+        updated_at = NOW()
+    WHERE id = NEW.conversation_id;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER trigger_update_conversation_last_message
+    AFTER INSERT ON messages
+    FOR EACH ROW
+    EXECUTE FUNCTION update_conversation_last_message();
+
+-- Trigger para actualizar updated_at en conversations
+CREATE TRIGGER update_conversations_updated_at BEFORE UPDATE ON conversations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Políticas RLS para conversations
+ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Dependencia ve sus conversaciones" ON conversations
+    FOR SELECT USING (dependency_id = auth.uid());
+
+CREATE POLICY "Candidato ve sus conversaciones" ON conversations
+    FOR SELECT USING (candidate_id = auth.uid());
+
+CREATE POLICY "Dependencia crea conversaciones" ON conversations
+    FOR INSERT WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM vacancies v
+            WHERE v.id = vacancy_id
+            AND v.created_by = auth.uid()
+        )
+    );
+
+CREATE POLICY "Dependencia actualiza sus conversaciones" ON conversations
+    FOR UPDATE USING (dependency_id = auth.uid());
+
+CREATE POLICY "Candidato actualiza sus conversaciones" ON conversations
+    FOR UPDATE USING (candidate_id = auth.uid());
+
+-- Políticas RLS para messages
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Participantes ven mensajes de su conversación" ON messages
+    FOR SELECT USING (
+        conversation_id IN (
+            SELECT id FROM conversations WHERE dependency_id = auth.uid() OR candidate_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Participantes envían mensajes" ON messages
+    FOR INSERT WITH CHECK (
+        sender_id = auth.uid()
+        AND conversation_id IN (
+            SELECT id FROM conversations WHERE dependency_id = auth.uid() OR candidate_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Participantes marcan como leídos" ON messages
+    FOR UPDATE USING (
+        conversation_id IN (
+            SELECT id FROM conversations WHERE dependency_id = auth.uid() OR candidate_id = auth.uid()
+        )
+    );
+
+-- ============================================================================
 -- E. EVALUACIÓN, ENTREVISTAS Y PRUEBAS TÉCNICAS
 -- ============================================================================
 

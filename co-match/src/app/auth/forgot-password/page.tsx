@@ -1,12 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
 export default function ForgotPasswordPage() {
-  const router = useRouter();
   const supabase = createClient();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -57,10 +55,6 @@ export default function ForgotPasswordPage() {
     setCooldown(60);
   };
 
-  const handleBackToLogin = () => {
-    router.push('/auth/login');
-  };
-
   const isButtonDisabled = isLoading || cooldown > 0;
 
   return (
@@ -96,12 +90,12 @@ export default function ForgotPasswordPage() {
               <p className="text-neutral-600 mb-6">
                 Revisa tu bandeja de entrada o la carpeta de correo no deseado (spam).
               </p>
-              <button
-                onClick={handleBackToLogin}
+              <Link
+                href="/auth/login"
                 className="inline-flex items-center justify-center gap-2 px-6 py-3 text-base font-medium text-white bg-primary rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors"
               >
                 Volver al inicio de sesión
-              </button>
+              </Link>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -150,12 +144,12 @@ export default function ForgotPasswordPage() {
           )}
 
           <div className="mt-6 text-center">
-            <button
-              onClick={handleBackToLogin}
+            <Link
+              href="/auth/login"
               className="text-sm text-primary font-medium hover:underline transition-colors"
             >
               ← Volver al inicio de sesión
-            </button>
+            </Link>
           </div>
         </div>
       </div>

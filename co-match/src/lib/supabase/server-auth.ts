@@ -1,6 +1,5 @@
-import { createClient } from './server'
+import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { cache } from 'react'
 
 export interface AuthUser {
   id: string
@@ -13,71 +12,94 @@ export interface AuthUser {
   is_active: boolean
 }
 
-export async function getAuthenticatedUser(): Promise<AuthUser | null> {
+interface AuthData {
+  user: AuthUser
+  profile: {
+    id: string
+    email: string
+    role: string
+    full_name?: string
+  } | null
+}
+
+export async function getAuthenticatedUser(): Promise<{ user: AuthUser | null; profile: any }> {
   const supabase = await createClient()
 
   const {
     data: { user },
+    error: authError
   } = await supabase.auth.getUser()
 
-  if (!user) {
-    return null
+  if (authError || !user) {
+    console.log("[getAuthenticatedUser] ❌ No hay usuario en sesión o error de auth:", authError?.message)
+    return { user: null, profile: null }
   }
 
-  const { data: profile, error } = await supabase
-    .from('users')
-    .select('full_name, email, role_id, department_id, is_profile_complete, is_active')
+  // CORRECCIÓN CLAVE: Consultar la tabla 'profiles' en lugar de 'users'
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('*')
     .eq('id', user.id)
-    .single()
+    .maybeSingle()
 
-  if (error || !profile || profile.is_active === false) {
-    return null
+  if (profileError) {
+    console.error("❌ Error al consultar 'profiles' en getAuthenticatedUser:", profileError.message)
   }
 
-  const { data: role } = await supabase
-    .from('roles')
-    .select('name')
-    .eq('id', profile.role_id)
-    .single()
+  const userRole = profile?.role || 'dependencia'
 
-  const { data: department } = await supabase
-    .from('departments')
-    .select('name')
-    .eq('id', profile.department_id)
-    .single()
+  const authUser: AuthUser = {
+    id: user.id,
+    email: user.email || '',
+    full_name: profile?.full_name || '',
+    role: userRole,
+    department_id: profile?.department_id || null,
+    department_name: null,
+    is_profile_complete: !!profile,
+    is_active: true,
+  }
 
   return {
-    id: user.id,
-    email: user.email || profile.email,
-    full_name: profile.full_name,
-    role: role?.name || 'unknown',
-    department_id: profile.department_id,
-    department_name: department?.name || null,
-    is_profile_complete: profile.is_profile_complete,
-    is_active: profile.is_active,
+    user: authUser,
+    profile: profile || { id: user.id, email: user.email, role: 'dependencia' },
   }
 }
 
-export async function requireAuth(): Promise<AuthUser> {
-  const user = await getAuthenticatedUser()
-  if (!user) {
+export async function requireAuth(allowedRoles?: string[]): Promise<{ user: AuthUser; profile: any }> {
+  const authData = await getAuthenticatedUser()
+
+  if (!authData || !authData.user) {
+    console.log("🚨 REDIRECCIÓN DISPARADA DESDE: requireAuth - Usuario no autenticado")
     redirect('/auth/login')
   }
-  return user
+
+  const userRole = authData.user.role
+
+  if (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(userRole)) {
+    console.log(`🚨 REDIRECCIÓN DISPARADA DESDE: requireAuth - Rol "${authData.user.role}" no autorizado`)
+    redirect('/auth/login')
+  }
+
+  return { user: { ...authData.user, role: authData.profile?.role || 'dependencia' }, profile: authData.profile }
 }
 
-export async function requireRole(allowedRoles: string[]): Promise<AuthUser> {
-  const user = await requireAuth()
-  if (!allowedRoles.includes(user.role)) {
+export async function requireRole(allowedRoles: string[]): Promise<{ user: AuthUser; profile: any }> {
+  const authData = await requireAuth()
+  const userRole = authData.user.role
+
+  if (!allowedRoles.includes(userRole)) {
+    console.log(`🚨 REDIRECCIÓN DISPARADA DESDE: src/lib/supabase/server-auth.ts (requireRole) - Rol no autorizado: ${authData.user.role}, permitidos: ${allowedRoles.join(', ')}`)
     redirect('/auth/login')
   }
-  return user
+  return { user: { ...authData.user, role: authData.profile?.role || 'dependencia' }, profile: authData.profile }
 }
 
 export async function requireStudent(): Promise<AuthUser> {
-  return requireRole(['postulante'])
+  const authData = await requireRole(['postulante'])
+  return authData.user
 }
 
 export async function requireAdmin(): Promise<AuthUser> {
-  return requireRole(['reclutador', 'jefe_area', 'admin'])
+  const authData = await requireRole(['dependencia', 'reclutador', 'jefe_area', 'admin'])
+  return authData.user
 }

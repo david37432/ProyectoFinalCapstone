@@ -1,15 +1,6 @@
-'use client';
-
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 export default function Home() {
-  const router = useRouter();
-
-  useEffect(() => {
-    router.replace('/auth/login');
-  }, [router]);
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-neutral-50">
       <div className="flex items-center gap-3 text-primary">
@@ -18,6 +9,15 @@ export default function Home() {
         </div>
         <span className="font-semibold text-xl text-neutral-900">CO-MATCH</span>
       </div>
+      <p className="mt-4 text-center text-neutral-600">
+        <Link href="/auth/login" className="text-primary hover:underline font-medium">
+          Iniciar sesión
+        </Link>
+        <span className="mx-2">o</span>
+        <Link href="/auth/register" className="text-primary hover:underline font-medium">
+          Registrarse
+        </Link>
+      </p>
     </div>
   );
 }
