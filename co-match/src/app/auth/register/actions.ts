@@ -3,6 +3,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { getSupabaseConfig } from '@/lib/supabase/config';
 
 export interface RegisterPayload {
   email: string;
@@ -20,10 +21,15 @@ export interface RegisterResult {
 }
 
 export async function registerAction(payload: RegisterPayload): Promise<RegisterResult> {
+  const { isConfigured, url, publishableKey } = getSupabaseConfig();
+  if (!isConfigured || !url || !publishableKey) {
+    return { success: false, error: 'La configuración de Supabase no está disponible. Contacta al administrador.' };
+  }
+
   const cookieStore = await cookies();
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    url,
+    publishableKey,
     {
       cookies: {
         getAll() {
@@ -61,8 +67,8 @@ export async function registerAction(payload: RegisterPayload): Promise<Register
 
   try {
     const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+      url,
+      publishableKey,
       {
         cookies: {
           getAll() {

@@ -2,7 +2,7 @@
 
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
+import { getSupabaseConfig } from '@/lib/supabase/config';
 
 export interface LoginResult {
   success: boolean;
@@ -22,17 +22,22 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
     return { success: false, error: 'El correo debe ser institucional (@unisabana.edu.co)' };
   }
 
+  const { isConfigured, url, publishableKey } = getSupabaseConfig();
+  if (!isConfigured || !url || !publishableKey) {
+    return { success: false, error: 'La configuración de Supabase no está disponible. Contacta al administrador.' };
+  }
+
   // Crear cliente con cookies para que se persistan correctamente
   const cookieStore = await cookies();
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    url,
+    publishableKey,
     {
       cookies: {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll(cookiesToSet: Array<{ name: string; value: string; options: any }>) {
+        setAll(cookiesToSet: Array<{ name: string; value: string; options: Parameters<typeof cookieStore.set>[2] }>) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
@@ -148,25 +153,30 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
       .eq('id', data.user.id);
   }
 
-  // Paso C: Redirección por Rol - usar redirect() para forzar commit de cookies
-  if (role === 'estudiante') {
-    redirect('/dashboard/estudiante/explorar');
-  } else {
-    redirect('/dashboard/dependencia');
-  }
+  return {
+    success: true,
+    redirectTo: role === 'estudiante'
+      ? '/dashboard/estudiante/explorar'
+      : '/dashboard/dependencia',
+  };
 }
 
 export async function logoutAction(): Promise<{ success: boolean; error?: string }> {
+  const { isConfigured, url, publishableKey } = getSupabaseConfig();
+  if (!isConfigured || !url || !publishableKey) {
+    return { success: false, error: 'La configuración de Supabase no está disponible. Contacta al administrador.' };
+  }
+
   const cookieStore = await cookies();
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    url,
+    publishableKey,
     {
       cookies: {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll(cookiesToSet: Array<{ name: string; value: string; options: any }>) {
+        setAll(cookiesToSet: Array<{ name: string; value: string; options: Parameters<typeof cookieStore.set>[2] }>) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)

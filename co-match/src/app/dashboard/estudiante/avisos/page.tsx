@@ -33,7 +33,7 @@ export default async function AvisosPage() {
     .limit(5);
 
   // Convertir vacantes recientes a notificaciones virtuales de oportunidad
-  const opportunityNotifications = (recentVacancies || []).map(vacancy => ({
+  const opportunityNotifications = (recentVacancies || []).map((vacancy: any) => ({
     id: `opportunity-${vacancy.id}`,
     type: 'opportunity' as const,
     title: '¡Nueva oportunidad publicada!',
@@ -94,7 +94,7 @@ export default async function AvisosPage() {
 
   // Combinar todas las notificaciones
   const allNotifications = [
-    ...(notifications || []).map(n => ({ ...n, is_virtual: false })),
+    ...(notifications || []).map((n: any) => ({ ...n, is_virtual: false })),
     ...opportunityNotifications,
     ...tipNotifications,
   ]

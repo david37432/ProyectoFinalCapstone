@@ -15,7 +15,7 @@ export async function GET() {
       .select('id')
       .eq('created_by', user.id);
 
-    const vacancyIds = userVacancies?.map(v => v.id) || [];
+    const vacancyIds = userVacancies?.map((v: { id: string }) => v.id) ?? [];
 
     if (vacancyIds.length === 0) {
       return NextResponse.json({ projects: [] })
@@ -55,7 +55,7 @@ export async function GET() {
       return NextResponse.json({ projects: [] })
     }
 
-    const applicationIds = applications.map(a => a.id);
+    const applicationIds = applications.map((application: { id: string }) => application.id);
 
     // Get milestones for all applications
     const { data: milestones } = await supabase
@@ -77,34 +77,62 @@ export async function GET() {
       .in('application_id', applicationIds);
 
     // Get departments
-    const departmentIds = [...new Set(applications.map(a => {
-      const vacancy = Array.isArray(a.vacancy) ? a.vacancy[0] : a.vacancy;
+    const departmentIds = [...new Set(applications.map((application: {
+      vacancy?: { department_id?: string } | Array<{ department_id?: string }> }
+    ) => {
+      const vacancy = Array.isArray(application.vacancy) ? application.vacancy[0] : application.vacancy;
       return vacancy?.department_id;
-    }).filter(Boolean))];
+    }).filter((departmentId: string | undefined): departmentId is string => Boolean(departmentId)))];
     const { data: departments } = await supabase
       .from('departments')
       .select('id, name')
       .in('id', departmentIds);
 
-    const departmentMap = new Map(departments?.map(d => [d.id, d.name]) || []);
+    const departmentMap = new Map<string, string>(
+      departments?.map((department: { id: string; name: string }) => [department.id, department.name]) ?? []
+    );
 
-    const milestonesByApp = new Map<string, any[]>();
-    milestones?.forEach(m => {
-      if (!milestonesByApp.has(m.application_id)) milestonesByApp.set(m.application_id, []);
-      milestonesByApp.get(m.application_id)!.push(m);
+    const milestonesByApp = new Map<string, Array<Record<string, unknown>>>();
+    milestones?.forEach((milestone: { application_id: string }) => {
+      if (!milestonesByApp.has(milestone.application_id)) milestonesByApp.set(milestone.application_id, []);
+      milestonesByApp.get(milestone.application_id)!.push(milestone as Record<string, unknown>);
     });
 
     const hoursByApp = new Map<string, number>();
-    hours?.forEach(h => {
-      hoursByApp.set(h.application_id, (hoursByApp.get(h.application_id) || 0) + Number(h.hours));
+    hours?.forEach((hourEntry: { application_id: string; hours: number | string }) => {
+      hoursByApp.set(hourEntry.application_id, (hoursByApp.get(hourEntry.application_id) || 0) + Number(hourEntry.hours));
     });
 
-    const evaluationByApp = new Map<string, any>();
-    evaluations?.forEach(e => {
-      evaluationByApp.set(e.application_id, e);
+    const evaluationByApp = new Map<string, Record<string, unknown>>();
+    evaluations?.forEach((evaluation: { application_id: string }) => {
+      evaluationByApp.set(evaluation.application_id, evaluation as Record<string, unknown>);
     });
 
-    const projects = applications.map(app => {
+    const projects = applications.map((app: {
+      id: string
+      match_score?: number | null
+      created_at: string
+      vacancy?: { id?: string; title?: string; department_id?: string; publication_date?: string | null; pat_hours_per_week?: number | null } | Array<{ id?: string; title?: string; department_id?: string; publication_date?: string | null; pat_hours_per_week?: number | null }>
+      candidate?: {
+        id?: string
+        full_name?: string
+        email?: string
+        avatar_url?: string | null
+        candidate_profile?: {
+          education_level?: string | null
+          availability_hours_per_week?: number | null
+        } | Array<{ education_level?: string | null; availability_hours_per_week?: number | null }>
+      } | Array<{
+        id?: string
+        full_name?: string
+        email?: string
+        avatar_url?: string | null
+        candidate_profile?: {
+          education_level?: string | null
+          availability_hours_per_week?: number | null
+        } | Array<{ education_level?: string | null; availability_hours_per_week?: number | null }>
+      }>
+    }) => {
       const vacancy = Array.isArray(app.vacancy) ? app.vacancy[0] : app.vacancy;
       const candidate = Array.isArray(app.candidate) ? app.candidate[0] : app.candidate;
       const profile = candidate?.candidate_profile;

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
 import { TopCandidate } from '@/lib/supabase/admin-queries';
 import { cn, getMatchScoreColor, getMatchScoreBgColor } from '@/lib/utils';
@@ -74,13 +75,13 @@ export function TopCandidatesPanel({ candidates }: TopCandidatesPanelProps) {
         ))}
 
         <div className="pt-4 border-t border-neutral-100">
-          <a
+          <Link
             href="/dashboard/dependencia/candidatos"
             className="w-full flex items-center justify-center gap-2 text-primary font-medium text-sm hover:underline"
           >
             Ver todos los candidatos
             <ArrowRight className="w-4 h-4" />
-          </a>
+          </Link>
         </div>
       </div>
     </div>

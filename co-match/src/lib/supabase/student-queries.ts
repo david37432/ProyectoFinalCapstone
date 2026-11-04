@@ -84,7 +84,7 @@ export async function getStudentVacancies(userId: string): Promise<StudentVacanc
     .select('skill_id, proficiency_level')
     .eq('candidate_profile_id', profile?.id)
 
-  const candidateSkillIds = candidateSkills?.map(cs => cs.skill_id) || []
+  const candidateSkillIds = candidateSkills?.map((cs: any) => cs.skill_id) || []
 
   const { data: vacancies } = await supabase
     .from('vacancies')
@@ -108,18 +108,18 @@ export async function getStudentVacancies(userId: string): Promise<StudentVacanc
   const { data: departments } = await supabase
     .from('departments')
     .select('id, name')
-    .in('id', [...new Set(vacancies.map(v => v.department_id))])
+    .in('id', [...new Set(vacancies.map((v: any) => v.department_id))])
 
-  const departmentMap = new Map(departments?.map(d => [d.id, d.name]) || [])
+  const departmentMap = new Map<string, string>(departments?.map((d: any) => [d.id, d.name]) || [])
 
-  const vacancyIds = vacancies.map(v => v.id)
+  const vacancyIds = vacancies.map((v: any) => v.id)
   const { data: applications } = await supabase
     .from('applications')
     .select('vacancy_id, candidate_id')
     .in('vacancy_id', vacancyIds)
 
   const applicationsByVacancy = new Map<string, number>()
-  applications?.forEach(app => {
+  applications?.forEach((app: any) => {
     applicationsByVacancy.set(app.vacancy_id, (applicationsByVacancy.get(app.vacancy_id) || 0) + 1)
   })
 
@@ -128,15 +128,15 @@ export async function getStudentVacancies(userId: string): Promise<StudentVacanc
     .select('vacancy_id')
     .eq('candidate_id', userId)
 
-  const appliedVacancyIds = new Set(myApplications?.map(a => a.vacancy_id) || [])
+  const appliedVacancyIds = new Set(myApplications?.map((a: any) => a.vacancy_id) || [])
 
-  return vacancies.map(vacancy => {
+  return vacancies.map((vacancy: any) => {
     const skills = vacancy.vacancy_skills?.map((vs: { skill_id: string; skills: { name: string }[] }) => vs.skills[0]?.name).filter(Boolean) || []
     const vacancySkillIds = vacancy.vacancy_skills?.map((vs: { skill_id: string }) => vs.skill_id) || []
 
     let matchScore = 0
     if (vacancySkillIds.length > 0) {
-      const matchedSkills = vacancySkillIds.filter(id => candidateSkillIds.includes(id)).length
+      const matchedSkills = vacancySkillIds.filter((id: any) => candidateSkillIds.includes(id)).length
       matchScore = Math.round((matchedSkills / vacancySkillIds.length) * 100)
     }
 
@@ -167,7 +167,7 @@ export async function getStudentVacancies(userId: string): Promise<StudentVacanc
       candidates_count: applicationsByVacancy.get(vacancy.id) || 0,
       is_applied: appliedVacancyIds.has(vacancy.id),
     }
-  }).sort((a, b) => b.match_score - a.match_score)
+  }).sort((a: any, b: any) => b.match_score - a.match_score)
 }
 
 export async function getStudentProfile(userId: string): Promise<StudentProfile | null> {
@@ -199,8 +199,8 @@ export async function getStudentProfile(userId: string): Promise<StudentProfile 
     .order('start_date', { ascending: false })
     .limit(3)
 
-  const skills = candidateSkills?.map(cs => cs.skills?.[0]?.name).filter(Boolean) || []
-  const experience = workExperience?.map(w => w.description).filter(Boolean).join('\n\n') || ''
+  const skills = candidateSkills?.map((cs: any) => cs.skills?.[0]?.name).filter(Boolean) || []
+  const experience = workExperience?.map((w: any) => w.description).filter(Boolean).join('\n\n') || ''
 
   const fields = [
     profile.full_name, profile.email, profile.phone, profile.student_code,
@@ -259,26 +259,26 @@ export async function getStudentApplications(userId: string): Promise<StudentApp
   const typedApplications = applications as ApplicationWithVacancy[]
 
   const vacancyIds = typedApplications
-    .map(a => a.vacancies?.[0]?.id)
+    .map((a: any) => a.vacancies?.[0]?.id)
     .filter((id): id is string => Boolean(id))
 
   const { data: departments } = await supabase
     .from('departments')
     .select('id, name')
-    .in('id', [...new Set(vacancyIds.map(v => {
-      const app = typedApplications.find(a => a.vacancies?.[0]?.id === v)
+    .in('id', [...new Set(vacancyIds.map((v: string) => {
+      const app = typedApplications.find((a: any) => a.vacancies?.[0]?.id === v)
       return app?.vacancies?.[0]?.department_id
     }).filter(Boolean))])
 
-  const departmentMap = new Map(departments?.map(d => [d.id, d.name]) || [])
+  const departmentMap = new Map<string, string>(departments?.map((d: any) => [d.id, d.name]) || [])
 
-  return typedApplications.map(app => {
+  return typedApplications.map((app: any) => {
     const vacancy = app.vacancies?.[0]
     return {
       id: app.id,
       vacancy_id: app.vacancy_id,
       title: vacancy?.title || 'Proyecto sin título',
-      department: vacancy?.department_id ? departmentMap.get(vacancy.department_id) || vacancy.department_id : 'Sin asignar',
+      department: vacancy?.department_id ? (departmentMap.get(vacancy.department_id) ?? 'Sin asignar') : 'Sin asignar',
       department_id: vacancy?.department_id || '',
       status: app.status,
       applied_at: app.applied_at,

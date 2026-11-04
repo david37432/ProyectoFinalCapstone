@@ -113,7 +113,7 @@ export default async function MessagesPage() {
         })),
       };
     })
-    .filter((c): c is Conversation => c !== null);
+    .filter((c: Conversation | null): c is Conversation => c !== null);
 
   return <StudentMessagesPage initialConversations={validConversations} userId={user.id} />;
 }

@@ -35,9 +35,9 @@ export async function GET() {
     }
 
     // Get online status for candidates
-    const candidateIds = conversations?.map(c => c.candidate_id) || [];
-    let onlineMap = new Map<string, boolean>();
-    
+    const candidateIds = conversations?.map((c: { candidate_id: string }) => c.candidate_id) ?? [];
+    const onlineMap = new Map<string, boolean>();
+
     if (candidateIds.length > 0) {
       const { data: profiles } = await supabase
         .from('users')
@@ -45,15 +45,26 @@ export async function GET() {
         .in('id', candidateIds);
 
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-      profiles?.forEach(p => {
-        onlineMap.set(p.id, p.last_login_at && p.last_login_at > fiveMinutesAgo);
+      profiles?.forEach((profile: { id: string; last_login_at: string | null }) => {
+        onlineMap.set(profile.id, Boolean(profile.last_login_at && profile.last_login_at > fiveMinutesAgo));
       });
     }
 
-    const conversationsWithDetails = conversations?.map(conv => {
+    const conversationsWithDetails = conversations?.map((conv: {
+      id: string
+      vacancy_id: string
+      candidate_id: string
+      last_message: string | null
+      last_message_at: string | null
+      last_message_by: string | null
+      unread_dependency_count: number | null
+      created_at: string
+      vacancy?: { title?: string } | Array<{ title?: string }>
+      candidate?: { full_name?: string; email?: string; avatar_url?: string | null } | Array<{ full_name?: string; email?: string; avatar_url?: string | null }>
+    }) => {
       const vacancy = Array.isArray(conv.vacancy) ? conv.vacancy[0] : conv.vacancy;
       const candidate = Array.isArray(conv.candidate) ? conv.candidate[0] : conv.candidate;
-      
+
       return {
         id: conv.id,
         vacancy_id: conv.vacancy_id,
@@ -69,7 +80,7 @@ export async function GET() {
         is_online: onlineMap.get(conv.candidate_id) || false,
         created_at: conv.created_at,
       };
-    }) || [];
+    }) ?? [];
 
     return NextResponse.json({ conversations: conversationsWithDetails })
   } catch (error) {

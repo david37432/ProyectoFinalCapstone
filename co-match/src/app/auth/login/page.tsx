@@ -2,9 +2,11 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { loginAction } from './actions';
 
 export default function LoginPage() {
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({
@@ -22,17 +24,21 @@ export default function LoginPage() {
     formDataToSend.append('email', formData.email);
     formDataToSend.append('password', formData.password);
 
-    const result = await loginAction(formDataToSend);
+    try {
+      const result = await loginAction(formDataToSend);
 
-    if (!result.success) {
-      setError(result.error || 'Error al iniciar sesion');
+      if (!result.success) {
+        setError(result.error || 'Error al iniciar sesion');
+        setIsLoading(false);
+        return;
+      }
+
+      router.replace(result.redirectTo || '/dashboard/estudiante/explorar');
+    } catch (actionError) {
+      console.error('Error inesperado al iniciar sesión:', actionError);
+      setError('No se pudo completar el inicio de sesión. Inténtalo de nuevo.');
       setIsLoading(false);
-      return;
     }
-
-    // El Server Action ya maneja la redirección con redirect() y cookies
-    // No necesitamos router.push aquí - el Server Action hace redirect()
-    // y el navegador recargará la página con las cookies actualizadas
   };
 
   return (

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/supabase/server-auth'
 import { NextResponse } from 'next/server'
@@ -59,7 +60,7 @@ export async function GET(
       )
     }
 
-    const messagesWithDetails = messages?.map(msg => {
+    const messagesWithDetails = messages?.map((msg: any) => {
       const sender = Array.isArray(msg.sender) ? msg.sender[0] : msg.sender;
       
       return {

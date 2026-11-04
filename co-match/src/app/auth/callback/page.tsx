@@ -10,7 +10,7 @@ export default function AuthCallbackPage() {
   const supabase = createClient();
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, session: { access_token?: string } | null) => {
       if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
         router.push('/auth/reset-password');
       } else if (event === 'TOKEN_REFRESHED' && session) {

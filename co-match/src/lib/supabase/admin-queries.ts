@@ -38,20 +38,20 @@ export async function getAdminMetrics(userId: string): Promise<AdminMetrics> {
     .select('id, status, department_id')
     .eq('created_by', userId);
 
-  const activeVacancies = vacancies?.filter(v => v.status === 'publicada').length || 0;
+  const activeVacancies = vacancies?.filter((v: any) => v.status === 'publicada').length || 0;
 
   const { data: applications } = await supabase
     .from('applications')
     .select('id, status, vacancy_id, match_score')
-    .in('vacancy_id', vacancies?.map(v => v.id) || []);
+    .in('vacancy_id', vacancies?.map((v: any) => v.id) || []);
 
-  const candidatesReviewed = applications?.filter(a => 
+  const candidatesReviewed = applications?.filter((a: any) => 
     ['en_revision', 'entrevista', 'prueba', 'aceptada', 'rechazada'].includes(a.status)
   ).length || 0;
 
-  const confirmedMatches = applications?.filter(a => a.status === 'aceptada').length || 0;
+  const confirmedMatches = applications?.filter((a: any) => a.status === 'aceptada').length || 0;
 
-  const projectsInProgress = applications?.filter(a => 
+  const projectsInProgress = applications?.filter((a: any) => 
     ['entrevista', 'prueba'].includes(a.status)
   ).length || 0;
 
@@ -84,7 +84,7 @@ export async function getVacanciesWithDetails(userId: string): Promise<VacancyWi
 
   if (!vacancies) return [];
 
-  const vacancyIds = vacancies.map(v => v.id);
+  const vacancyIds = vacancies.map((v: any) => v.id);
   
   const { data: applications } = await supabase
     .from('applications')
@@ -94,12 +94,12 @@ export async function getVacanciesWithDetails(userId: string): Promise<VacancyWi
   const { data: departments } = await supabase
     .from('departments')
     .select('id, name')
-    .in('id', [...new Set(vacancies.map(v => v.department_id))]);
+    .in('id', [...new Set(vacancies.map((v: any) => v.department_id))]);
 
-  const departmentMap = new Map(departments?.map(d => [d.id, d.name]) || []);
+  const departmentMap = new Map(departments?.map((d: any) => [d.id, d.name]) || []);
 
-  return vacancies.map(vacancy => {
-    const candidatesCount = applications?.filter(a => a.vacancy_id === vacancy.id).length || 0;
+  return vacancies.map((vacancy: any) => {
+    const candidatesCount = applications?.filter((a: any) => a.vacancy_id === vacancy.id).length || 0;
     const skills = vacancy.vacancy_skills?.map((vs: { skill_id: string; skills: { name: string }[] }) => vs.skills[0]?.name).filter(Boolean) || [];
 
     return {
@@ -128,7 +128,7 @@ export async function getTopCandidates(userId: string, limit = 5): Promise<TopCa
 
   if (!vacancies || vacancies.length === 0) return [];
 
-  const vacancyIds = vacancies.map(v => v.id);
+  const vacancyIds = vacancies.map((v: any) => v.id);
 
   const { data: applications } = await supabase
     .from('applications')
@@ -149,7 +149,7 @@ export async function getTopCandidates(userId: string, limit = 5): Promise<TopCa
   if (!applications) return [];
 
   const uniqueCandidates = new Map();
-  applications.forEach(app => {
+  applications.forEach((app: any) => {
     const key = app.candidate_id;
     if (!uniqueCandidates.has(key) || uniqueCandidates.get(key).match_score < app.match_score) {
       uniqueCandidates.set(key, app);
@@ -158,13 +158,13 @@ export async function getTopCandidates(userId: string, limit = 5): Promise<TopCa
 
   return Array.from(uniqueCandidates.values())
     .slice(0, limit)
-    .map(app => ({
+    .map((app: any) => ({
       id: app.candidate_id,
       full_name: app.candidate?.full_name || 'Sin nombre',
       email: app.candidate?.email || '',
       career: app.candidate_profile?.education_level || 'No especificado',
       match_score: app.match_score,
-      vacancy_title: vacancies.find(v => v.id === app.vacancy_id)?.title || 'Vacante',
+      vacancy_title: vacancies.find((v: any) => v.id === app.vacancy_id)?.title || 'Vacante',
     }));
 }
 
@@ -212,7 +212,7 @@ export async function getVacanciesForSelector(userId: string): Promise<VacancySu
 
   if (!vacancies) return [];
 
-  const vacancyIds = vacancies.map(v => v.id);
+  const vacancyIds = vacancies.map((v: any) => v.id);
   
   const { data: applications } = await supabase
     .from('applications')
@@ -222,12 +222,12 @@ export async function getVacanciesForSelector(userId: string): Promise<VacancySu
   const { data: departments } = await supabase
     .from('departments')
     .select('id, name')
-    .in('id', [...new Set(vacancies.map(v => v.department_id))]);
+    .in('id', [...new Set(vacancies.map((v: any) => v.department_id))]);
 
-  const departmentMap = new Map(departments?.map(d => [d.id, d.name]) || []);
+  const departmentMap = new Map(departments?.map((d: any) => [d.id, d.name]) || []);
 
-  return vacancies.map(vacancy => {
-    const candidatesCount = applications?.filter(a => a.vacancy_id === vacancy.id).length || 0;
+  return vacancies.map((vacancy: any) => {
+    const candidatesCount = applications?.filter((a: any) => a.vacancy_id === vacancy.id).length || 0;
     const skills = vacancy.vacancy_skills?.map((vs: { skill_id: string; skills: { name: string }[] }) => vs.skills[0]?.name).filter(Boolean) || [];
 
     return {
@@ -250,7 +250,7 @@ export async function getCandidatesByVacancy(vacancyId: string): Promise<Candida
     .eq('vacancy_id', vacancyId)
     .eq('is_required', true);
 
-  const requiredSkillIds = new Set(vacancySkills?.map(vs => vs.skill_id) || []);
+  const requiredSkillIds = new Set(vacancySkills?.map((vs: any) => vs.skill_id) || []);
 
   // Get applications with candidate details
   const { data: applications } = await supabase
@@ -285,7 +285,7 @@ export async function getCandidatesByVacancy(vacancyId: string): Promise<Candida
 
   if (!applications) return [];
 
-  return applications.map(app => {
+  return applications.map((app: any) => {
     const candidate = Array.isArray(app.candidate) ? app.candidate[0] : app.candidate;
     const profile = candidate?.candidate_profile;
     const profileData = Array.isArray(profile) ? profile[0] : profile;
@@ -431,7 +431,7 @@ export async function getConversationsForDependency(dependencyId: string): Promi
   if (!conversations) return [];
 
   // Get online status for candidates (last activity within 5 minutes)
-  const candidateIds = conversations.map(c => c.candidate_id);
+  const candidateIds = conversations.map((c: any) => c.candidate_id);
   const { data: profiles } = await supabase
     .from('users')
     .select('id, last_login_at')
@@ -440,11 +440,11 @@ export async function getConversationsForDependency(dependencyId: string): Promi
   const onlineMap = new Map<string, boolean>();
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
   
-  profiles?.forEach(p => {
+  profiles?.forEach((p: any) => {
     onlineMap.set(p.id, p.last_login_at && p.last_login_at > fiveMinutesAgo);
   });
 
-  return conversations.map(conv => {
+  return conversations.map((conv: any) => {
     const vacancy = Array.isArray(conv.vacancy) ? conv.vacancy[0] : conv.vacancy;
     const candidate = Array.isArray(conv.candidate) ? conv.candidate[0] : conv.candidate;
     
@@ -489,7 +489,7 @@ export async function getMessagesForConversation(conversationId: string, current
 
   if (!messages) return [];
 
-  return messages.map(msg => {
+  return messages.map((msg: any) => {
     const sender = Array.isArray(msg.sender) ? msg.sender[0] : msg.sender;
     
     return {
@@ -605,7 +605,7 @@ export async function getTotalUnreadCount(dependencyId: string): Promise<number>
 
   if (error || !data) return 0;
 
-  return data.reduce((sum, conv) => sum + (conv.unread_dependency_count || 0), 0);
+  return data.reduce((sum: number, conv: any) => sum + (conv.unread_dependency_count || 0), 0);
 }
 
 // ============================================================================
@@ -675,7 +675,7 @@ export async function getSeguimientoProjects(dependencyId: string): Promise<Segu
     .select('id')
     .eq('created_by', dependencyId);
 
-  const vacancyIds = userVacancies?.map(v => v.id) || [];
+  const vacancyIds = userVacancies?.map((v: any) => v.id) || [];
 
   if (vacancyIds.length === 0) return [];
 
@@ -711,7 +711,7 @@ export async function getSeguimientoProjects(dependencyId: string): Promise<Segu
 
   if (!applications || applications.length === 0) return [];
 
-  const applicationIds = applications.map(a => a.id);
+  const applicationIds = applications.map((a: any) => a.id);
 
   // Get milestones for all applications
   const { data: milestones } = await supabase
@@ -733,7 +733,7 @@ export async function getSeguimientoProjects(dependencyId: string): Promise<Segu
     .in('application_id', applicationIds);
 
   // Get departments for vacancy names
-  const departmentIds = [...new Set(applications.map(a => {
+  const departmentIds = [...new Set(applications.map((a: any) => {
       const vacancy = Array.isArray(a.vacancy) ? a.vacancy[0] : a.vacancy;
       return vacancy?.department_id;
     }).filter(Boolean))];
@@ -742,25 +742,25 @@ export async function getSeguimientoProjects(dependencyId: string): Promise<Segu
     .select('id, name')
     .in('id', departmentIds);
   
-  const departmentMap = new Map(departments?.map(d => [d.id, d.name]) || []);
+  const departmentMap = new Map(departments?.map((d: any) => [d.id, d.name]) || []);
 
   const milestonesByApp = new Map<string, ProjectMilestone[]>();
-  milestones?.forEach(m => {
+  milestones?.forEach((m: any) => {
     if (!milestonesByApp.has(m.application_id)) milestonesByApp.set(m.application_id, []);
     milestonesByApp.get(m.application_id)!.push(m);
   });
 
   const hoursByApp = new Map<string, number>();
-  hours?.forEach(h => {
+  hours?.forEach((h: any) => {
     hoursByApp.set(h.application_id, (hoursByApp.get(h.application_id) || 0) + Number(h.hours));
   });
 
   const evaluationByApp = new Map<string, ProjectEvaluation>();
-  evaluations?.forEach(e => {
+  evaluations?.forEach((e: any) => {
     evaluationByApp.set(e.application_id, e);
   });
 
-  return applications.map(app => {
+  return applications.map((app: any) => {
     const vacancy = Array.isArray(app.vacancy) ? app.vacancy[0] : app.vacancy;
     const candidate = Array.isArray(app.candidate) ? app.candidate[0] : app.candidate;
     const profile = candidate?.candidate_profile;
@@ -838,7 +838,7 @@ export async function getSeguimientoProjectById(applicationId: string): Promise<
     .eq('id', vacancy?.department_id)
     .single();
 
-  const totalHours = hoursRes.data?.reduce((sum, h) => sum + Number(h.hours), 0) || 0;
+  const totalHours = hoursRes.data?.reduce((sum: number, h: any) => sum + Number(h.hours), 0) || 0;
 
   return {
     application_id: app.id,

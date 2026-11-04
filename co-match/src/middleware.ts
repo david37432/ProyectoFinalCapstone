@@ -1,14 +1,21 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { getSupabaseConfig } from '@/lib/supabase/config'
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
     request: { headers: request.headers }
   })
 
+  const { isConfigured, url: supabaseUrl, publishableKey } = getSupabaseConfig()
+
+  if (!isConfigured || !supabaseUrl || !publishableKey) {
+    return response
+  }
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    supabaseUrl,
+    publishableKey,
     {
       cookies: {
         getAll() { return request.cookies.getAll(); },
@@ -42,7 +49,7 @@ export async function middleware(request: NextRequest) {
     console.log(`[Middleware] 👤 Usuario: ${user.email} | Rol detectado: "${profile?.role}" | Error Profile:`, profileError?.message || 'Ninguno')
 
     // Si la consulta falla o el rol no es autorizado
-    const allowedRoles = ['dependencia', 'pat', 'admin']
+    const allowedRoles = ['dependencia', 'reclutador', 'jefe_area', 'pat', 'admin']
     if (!profile || !allowedRoles.includes(profile.role)) {
       console.warn(`[Middleware] ⚠️ Acceso denegado a ${url.pathname} para el rol "${profile?.role}". Redirigiendo...`)
       

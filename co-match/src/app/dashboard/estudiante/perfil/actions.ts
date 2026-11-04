@@ -3,6 +3,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
+import { getSupabaseConfig } from '@/lib/supabase/config';
 
 export interface StudentProfileInput {
   full_name: string;
@@ -47,10 +48,15 @@ export type UpdateProfileResult =
   | { success: false; error: string };
 
 export async function updateStudentProfile(payload: StudentProfileInput): Promise<UpdateProfileResult> {
+  const { isConfigured, url, publishableKey } = getSupabaseConfig();
+  if (!isConfigured || !url || !publishableKey) {
+    return { success: false, error: 'La configuración de Supabase no está disponible. Contacta al administrador.' };
+  }
+
   const cookieStore = await cookies();
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    url,
+    publishableKey,
     {
       cookies: {
         getAll() {

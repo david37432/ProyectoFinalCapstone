@@ -87,7 +87,7 @@ export default function StudentMessagesPage({ initialConversations, userId }: St
           table: 'messages',
           filter: `application_id=eq.${selectedConversation.applicationId}`,
         },
-        (payload) => {
+        (payload: any) => {
           const newMessage = payload.new as any;
           if (newMessage.sender_id === userId) return; // Don't duplicate own messages
 
@@ -122,7 +122,7 @@ export default function StudentMessagesPage({ initialConversations, userId }: St
           table: 'messages',
           filter: `application_id=eq.${selectedConversation.applicationId}`,
         },
-        (payload) => {
+        (payload: any) => {
           const updatedMessage = payload.new as any;
           setConversations(prev => prev.map(conv => {
             if (conv.applicationId !== selectedConversation.applicationId) return conv;

@@ -57,7 +57,12 @@ export async function PATCH(
     }
 
     // Update milestone status
-    const updates: any = { status, updated_at: new Date().toISOString() };
+    const updates: {
+      status: string
+      updated_at: string
+      started_date?: string
+      completed_date?: string
+    } = { status, updated_at: new Date().toISOString() };
     if (status === 'in_progress') updates.started_date = new Date().toISOString();
     if (status === 'completed') updates.completed_date = new Date().toISOString();
 

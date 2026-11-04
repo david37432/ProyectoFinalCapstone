@@ -1,8 +1,12 @@
 import { createBrowserClient } from '@supabase/ssr'
+import { createFallbackSupabaseClient, getSupabaseConfig } from '@/lib/supabase/config'
 
 export function createClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-  )
+  const { isConfigured, url, publishableKey } = getSupabaseConfig()
+
+  if (!isConfigured || !url || !publishableKey) {
+    return createFallbackSupabaseClient()
+  }
+
+  return createBrowserClient(url, publishableKey)
 }
