@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { loginAction } from './actions';
@@ -8,7 +8,20 @@ import { loginAction } from './actions';
 export default function LoginPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  // Errores que llegan desde /auth/confirm (?error=...)
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const reason = new URLSearchParams(window.location.search).get('error');
+    if (!reason) return;
+    const messages: Record<string, string> = {
+      enlace_expirado: 'El enlace de confirmación expiró o ya se usó. Inicia sesión o regístrate de nuevo.',
+      enlace_invalido: 'El enlace de confirmación no es válido.',
+      sin_sesion: 'No se pudo iniciar la sesión tras confirmar. Inicia sesión manualmente.',
+      config: 'La configuración de Supabase no está disponible. Contacta al administrador.',
+    };
+    setError(messages[reason] ?? 'No se pudo confirmar la cuenta.');
+  }, []);
   const [formData, setFormData] = useState({
     email: '',
     password: '',

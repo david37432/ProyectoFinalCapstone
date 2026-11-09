@@ -35,6 +35,12 @@ export default function RegisterPage() {
     e.preventDefault();
     setError('');
 
+    // Enter en el paso 1 avanza al paso 2 en vez de enviar el formulario incompleto
+    if (step === 1) {
+      handleNext();
+      return;
+    }
+
     if (formData.password !== formData.confirmPassword) {
       setError('Las contraseñas no coinciden');
       return;
@@ -61,29 +67,42 @@ export default function RegisterPage() {
       role: formData.role,
     };
 
-    const result = await registerAction(payload);
+    try {
+      const result = await registerAction(payload);
 
-    if (!result.success) {
-      setError(result.error || 'Error al crear la cuenta');
+      if (!result.success) {
+        setError(result.error || 'Error al crear la cuenta');
+        return;
+      }
+
+      if (result.needsEmailConfirmation) {
+        setNotice(`Cuenta creada. Te enviamos un correo a ${formData.email}: ábrelo y confirma tu cuenta antes de iniciar sesión.`);
+        return;
+      }
+
+      if (result.redirectTo) {
+        router.push(result.redirectTo);
+      } else {
+        router.refresh();
+      }
+    } catch (err) {
+      console.error('Error en el registro:', err);
+      setError('No se pudo completar el registro. Revisa tu conexión e inténtalo de nuevo.');
+    } finally {
+      // Sin esto, un fallo de red dejaba el botón con el spinner para siempre
       setIsLoading(false);
-      return;
-    }
-
-    if (result.needsEmailConfirmation) {
-      setIsLoading(false);
-      setNotice(`Cuenta creada. Te enviamos un correo a ${formData.email}: ábrelo y confirma tu cuenta antes de iniciar sesión.`);
-      return;
-    }
-
-    if (result.redirectTo) {
-      router.push(result.redirectTo);
-    } else {
-      router.refresh();
     }
   };
 
   const handleBack = () => setStep(1);
-  const handleNext = () => setStep(2);
+  const handleNext = () => {
+    if (!formData.email || !formData.password || !formData.confirmPassword || !formData.role) {
+      setError('Completa correo, contraseñas y tipo de usuario');
+      return;
+    }
+    setError('');
+    setStep(2);
+  };
 
   const roleOptions = [
     { value: 'postulante', label: 'Estudiante PAT' },
@@ -342,8 +361,7 @@ export default function RegisterPage() {
             <div className="flex gap-3 pt-4">
               {step === 1 && (
                 <button
-                  type="button"
-                  onClick={handleNext}
+                  type="submit"
                   disabled={isLoading}
                   className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 text-base font-medium text-white bg-primary rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
