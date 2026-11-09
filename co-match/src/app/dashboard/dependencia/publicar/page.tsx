@@ -255,7 +255,7 @@ export default function PublicarNecesidadPage() {
                     id="description"
                     value={formData.description}
                     onChange={(e) => handleInputChange('description', e.target.value)}
-                    placeholder="1. Proceso actual y problema identificado\n2. Tareas específicas a automatizar\n3. Impacto esperado en la productividad"
+                    placeholder={"1. Proceso actual y problema identificado\n2. Tareas específicas a automatizar\n3. Impacto esperado en la productividad"}
                     rows={6}
                     error={errors.description}
                     disabled={isLoading}

@@ -1,39 +1,12 @@
-'use client';
+import { DependenciaShell } from '@/components/layout/admin/DependenciaShell';
+import { getAuthenticatedUser } from '@/lib/supabase/server-auth';
 
-import { AdminHeader } from '@/components/layout/admin/AdminHeader';
-import { AdminSidebar } from '@/components/layout/admin/AdminSidebar';
-import { cn } from '@/lib/utils';
-import { useState } from 'react';
-
-export default function DependenciaLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [currentView, setCurrentView] = useState<'web' | 'mobile'>('web');
+export default async function DependenciaLayout({ children }: { children: React.ReactNode }) {
+  const { user } = await getAuthenticatedUser();
 
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <AdminHeader
-        userName="Usuario"
-        departmentName="Dependencia"
-        onViewToggle={setCurrentView}
-        currentView={currentView}
-      />
-      <AdminSidebar
-        isCollapsed={isSidebarCollapsed}
-        onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-      />
-
-      <main
-        className={cn(
-          'pt-16 transition-all duration-300 min-h-[calc(100vh-4rem)]',
-          isSidebarCollapsed ? 'ml-16' : 'ml-64'
-        )}
-      >
-        {children}
-      </main>
-    </div>
+    <DependenciaShell userName={user?.full_name || user?.email || 'Usuario'} departmentName="Dependencia">
+      {children}
+    </DependenciaShell>
   );
 }
