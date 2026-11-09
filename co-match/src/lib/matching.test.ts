@@ -35,9 +35,9 @@ describe('proficiencyFactor', () => {
     expect(proficiencyFactor('avanzado')).toBe(1);
   });
 
-  it('asume intermedio si el nivel es desconocido', () => {
-    expect(proficiencyFactor(null)).toBe(proficiencyFactor('intermedio'));
-    expect(proficiencyFactor('experto')).toBe(proficiencyFactor('intermedio'));
+  it('no penaliza si el nivel es desconocido (perfil sin nivel de dominio)', () => {
+    expect(proficiencyFactor(null)).toBe(1);
+    expect(proficiencyFactor('experto')).toBe(1);
   });
 });
 
@@ -196,8 +196,61 @@ describe('validateVacancyForm', () => {
     }
   });
 
+  it('rechaza más de 25 horas semanales (máximo PAT)', () => {
+    expect(validateVacancyForm({ ...valid, weeklyHours: '30' }).ok).toBe(false);
+    expect(validateVacancyForm({ ...valid, weeklyHours: '25' }).ok).toBe(true);
+  });
+
   it('rechaza títulos de más de 200 caracteres', () => {
     const r = validateVacancyForm({ ...valid, title: 'a'.repeat(201) });
     expect(r.ok).toBe(false);
+  });
+});
+
+import { skillKey, vacancySkillsFromRows, candidateFromProfiles } from './matching';
+
+describe('adaptadores de perfil', () => {
+  it('skillKey normaliza mayúsculas y espacios', () => {
+    expect(skillKey('  Power   BI ')).toBe('power bi');
+    expect(skillKey(null)).toBe('');
+  });
+
+  it('vacancySkillsFromRows usa el nombre de la habilidad (objeto o arreglo)', () => {
+    const rows = [
+      { skill_id: 'id-1', weight: 3, is_required: true, skills: { name: 'Python' } },
+      { skill_id: 'id-2', skills: [{ name: 'SQL' }] },
+      { skill_id: 'id-3', skills: null },
+    ];
+    expect(vacancySkillsFromRows(rows)).toEqual([
+      { skillId: 'python', weight: 3, isRequired: true },
+      { skillId: 'sql', weight: 1, isRequired: true },
+      { skillId: 'id-3', weight: 1, isRequired: true },
+    ]);
+  });
+
+  it('candidateFromProfiles toma habilidades y horas de profiles', () => {
+    const c = candidateFromProfiles({ skills: ['Python', 'python', ' SQL'], availability_hours: 20 });
+    expect(c.skills.map((s) => s.skillId)).toEqual(['python', 'sql']);
+    expect(c.availabilityHoursPerWeek).toBe(20);
+  });
+
+  it('candidate_skills aporta el nivel de dominio', () => {
+    const c = candidateFromProfiles(
+      { skills: ['Python'] },
+      { candidate_skills: [{ proficiency_level: 'avanzado', skills: { name: 'python' } }], preferred_modality: 'remoto' }
+    );
+    expect(c.skills).toEqual([{ skillId: 'python', proficiency: 'avanzado' }]);
+    expect(c.preferredModality).toBe('remoto');
+  });
+
+  it('un estudiante con las habilidades del perfil hace match con la vacante', () => {
+    const vacancy = { skills: vacancySkillsFromRows([{ skills: { name: 'Python' } }, { skills: { name: 'SQL' } }]), patHoursPerWeek: 20 };
+    const student = candidateFromProfiles({ skills: ['python', 'sql'], availability_hours: 20 });
+    expect(computeMatch(vacancy, student).matchedSkillIds).toEqual(['python', 'sql']);
+    expect(computeMatchScore(vacancy, student)).toBeGreaterThanOrEqual(85);
+  });
+
+  it('sin perfil no falla', () => {
+    expect(candidateFromProfiles(null).skills).toEqual([]);
   });
 });

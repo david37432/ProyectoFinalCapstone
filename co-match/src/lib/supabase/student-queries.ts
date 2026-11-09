@@ -1,5 +1,5 @@
 import { createClient } from './server'
-import { computeMatchScore, firstOf } from '@/lib/matching'
+import { computeMatchScore, firstOf, candidateFromProfiles, vacancySkillsFromRows } from '@/lib/matching'
 
 interface VacancyData {
   id: string
@@ -74,17 +74,19 @@ export interface StudentApplication {
 export async function getStudentVacancies(userId: string): Promise<StudentVacancy[]> {
   const supabase = await createClient()
 
-  const { data: profile } = await supabase
+  const { data: studentProfile } = await supabase
+    .from('profiles')
+    .select('skills, availability_hours')
+    .eq('id', userId)
+    .maybeSingle()
+
+  const { data: candidateProfile } = await supabase
     .from('candidate_profiles')
-    .select('id, education_level, availability_hours_per_week, preferred_modality, preferred_contract_type')
+    .select('availability_hours_per_week, preferred_modality, preferred_contract_type, candidate_skills(proficiency_level, skills(name))')
     .eq('user_id', userId)
-    .single()
+    .maybeSingle()
 
-  const { data: candidateSkills } = await supabase
-    .from('candidate_skills')
-    .select('skill_id, proficiency_level')
-    .eq('candidate_profile_id', profile?.id ?? '')
-
+  const candidate = candidateFromProfiles(studentProfile as any, candidateProfile as any)
 
   const { data: vacancies } = await supabase
     .from('vacancies')
@@ -138,24 +140,12 @@ export async function getStudentVacancies(userId: string): Promise<StudentVacanc
 
     const matchScore = computeMatchScore(
       {
-        skills: vacancySkills.map((vs: any) => ({
-          skillId: vs.skill_id,
-          weight: vs.weight ?? 1,
-          isRequired: vs.is_required ?? true,
-        })),
+        skills: vacancySkillsFromRows(vacancySkills),
         patHoursPerWeek: vacancy.pat_hours_per_week,
         modality: vacancy.modality,
         contractType: vacancy.contract_type,
       },
-      {
-        skills: (candidateSkills ?? []).map((cs: any) => ({
-          skillId: cs.skill_id,
-          proficiency: cs.proficiency_level,
-        })),
-        availabilityHoursPerWeek: profile?.availability_hours_per_week ?? null,
-        preferredModality: profile?.preferred_modality ?? null,
-        preferredContractType: profile?.preferred_contract_type ?? null,
-      }
+      candidate
     )
 
     return {

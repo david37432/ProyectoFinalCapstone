@@ -297,7 +297,7 @@ export default function RegisterPage() {
 
                 <div>
                   <label htmlFor="document_number" className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    Número de documento
+                    Código estudiantil
                   </label>
                   <input
                     id="document_number"

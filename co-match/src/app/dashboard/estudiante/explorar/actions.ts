@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import { computeMatchScore } from '@/lib/matching';
+import { computeMatchScore, candidateFromProfiles, vacancySkillsFromRows } from '@/lib/matching';
 
 export interface ApplicationActionResult {
   success: boolean;
@@ -22,7 +22,7 @@ export async function applyToVacancyAction(vacancyId: string): Promise<Applicati
 
   const { data: vacancy, error: vacancyError } = await supabase
     .from('vacancies')
-    .select('id, status, modality, contract_type, pat_hours_per_week, vacancy_skills(skill_id, weight, is_required)')
+    .select('id, status, modality, contract_type, pat_hours_per_week, vacancy_skills(skill_id, weight, is_required, skills(name))')
     .eq('id', vacancyId)
     .maybeSingle();
 
@@ -31,32 +31,28 @@ export async function applyToVacancyAction(vacancyId: string): Promise<Applicati
     return { success: false, error: 'La vacante no está disponible para postulaciones' };
   }
 
-  const { data: profile } = await supabase
+  // Habilidades y horas del perfil del estudiante (tabla profiles)
+  const { data: studentProfile } = await supabase
+    .from('profiles')
+    .select('skills, availability_hours')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  // Datos opcionales: nivel de dominio y preferencias (candidate_profiles)
+  const { data: candidateProfile } = await supabase
     .from('candidate_profiles')
-    .select('id, availability_hours_per_week, preferred_modality, preferred_contract_type, candidate_skills(skill_id, proficiency_level)')
+    .select('availability_hours_per_week, preferred_modality, preferred_contract_type, candidate_skills(proficiency_level, skills(name))')
     .eq('user_id', user.id)
     .maybeSingle();
 
   const matchScore = computeMatchScore(
     {
-      skills: (vacancy.vacancy_skills ?? []).map((vs: any) => ({
-        skillId: vs.skill_id,
-        weight: vs.weight ?? 1,
-        isRequired: vs.is_required ?? true,
-      })),
+      skills: vacancySkillsFromRows(vacancy.vacancy_skills as any),
       patHoursPerWeek: vacancy.pat_hours_per_week,
       modality: vacancy.modality,
       contractType: vacancy.contract_type,
     },
-    {
-      skills: ((profile as any)?.candidate_skills ?? []).map((cs: any) => ({
-        skillId: cs.skill_id,
-        proficiency: cs.proficiency_level,
-      })),
-      availabilityHoursPerWeek: profile?.availability_hours_per_week ?? null,
-      preferredModality: profile?.preferred_modality ?? null,
-      preferredContractType: profile?.preferred_contract_type ?? null,
-    }
+    candidateFromProfiles(studentProfile as any, candidateProfile as any)
   );
 
   const { error } = await supabase.from('applications').insert({

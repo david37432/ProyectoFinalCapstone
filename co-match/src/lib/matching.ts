@@ -1,3 +1,5 @@
+import { PAT_MAX_HOURS } from './profile';
+
 /**
  * Algoritmo de matching de Co-Match.
  *
@@ -63,12 +65,15 @@ const PROFICIENCY_FACTOR: Record<Proficiency, number> = {
   avanzado: 1,
 };
 
-/** Factor por nivel de dominio; si no se conoce se asume intermedio. */
+/**
+ * Factor por nivel de dominio. Si no se conoce (el perfil solo guarda el
+ * nombre de la habilidad) no se penaliza: factor 1.
+ */
 export function proficiencyFactor(level?: string | null): number {
   if (level && level in PROFICIENCY_FACTOR) {
     return PROFICIENCY_FACTOR[level as Proficiency];
   }
-  return PROFICIENCY_FACTOR.intermedio;
+  return 1;
 }
 
 function clampWeight(weight?: number): number {
@@ -215,11 +220,82 @@ export function validateVacancyForm(
   if (!department) errors.department = 'El área/departamento es obligatorio';
   if (!description) errors.description = 'La descripción es obligatoria';
   if (skills.length === 0) errors.skills = 'Debe seleccionar al menos una habilidad';
-  if (!Number.isInteger(weeklyHours) || weeklyHours < 1 || weeklyHours > 48)
-    errors.weeklyHours = 'Las horas semanales deben estar entre 1 y 48';
+  if (!Number.isInteger(weeklyHours) || weeklyHours < 1 || weeklyHours > PAT_MAX_HOURS)
+    errors.weeklyHours = `Las horas semanales deben estar entre 1 y ${PAT_MAX_HOURS} (máximo PAT)`;
   if (!Number.isInteger(durationMonths) || durationMonths < 1 || durationMonths > 24)
     errors.durationMonths = 'La duración debe estar entre 1 y 24 meses';
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return { ok: true, data: { title, department, description, skills, weeklyHours, durationMonths } };
+}
+
+// ---------------------------------------------------------------------------
+// Adaptadores: el perfil del estudiante guarda las habilidades como texto
+// en `profiles.skills` (y opcionalmente en candidate_skills). El matching se
+// hace por NOMBRE de habilidad normalizado para que ambas fuentes coincidan.
+// ---------------------------------------------------------------------------
+
+/** Clave normalizada de una habilidad: "  Power BI " → "power bi". */
+export function skillKey(name: string | null | undefined): string {
+  return (name ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+interface VacancySkillRow {
+  skill_id?: string;
+  weight?: number | null;
+  is_required?: boolean | null;
+  skills?: { name: string } | { name: string }[] | null;
+}
+
+/** Convierte las filas vacancy_skills(…, skills(name)) a habilidades por nombre. */
+export function vacancySkillsFromRows(rows: VacancySkillRow[] | null | undefined): MatchVacancySkill[] {
+  return (rows ?? [])
+    .map((vs) => {
+      const name = firstOf(vs.skills)?.name;
+      return {
+        skillId: name ? skillKey(name) : (vs.skill_id ?? ''),
+        weight: vs.weight ?? 1,
+        isRequired: vs.is_required ?? true,
+      };
+    })
+    .filter((s) => s.skillId);
+}
+
+export interface StudentProfileRow {
+  skills?: string[] | null;
+  availability_hours?: number | null;
+}
+
+export interface CandidateProfileRow {
+  availability_hours_per_week?: number | null;
+  preferred_modality?: string | null;
+  preferred_contract_type?: string | null;
+  candidate_skills?: { proficiency_level?: string | null; skills?: { name: string } | { name: string }[] | null }[] | null;
+}
+
+/**
+ * Arma el candidato para el matching uniendo `profiles` (habilidades como
+ * texto y horas) con `candidate_profiles` (nivel de dominio y preferencias).
+ */
+export function candidateFromProfiles(
+  profile: StudentProfileRow | null | undefined,
+  candidateProfile?: CandidateProfileRow | null
+): MatchCandidate {
+  const skills = new Map<string, MatchCandidateSkill>();
+
+  for (const cs of candidateProfile?.candidate_skills ?? []) {
+    const key = skillKey(firstOf(cs.skills)?.name);
+    if (key) skills.set(key, { skillId: key, proficiency: cs.proficiency_level });
+  }
+  for (const name of profile?.skills ?? []) {
+    const key = skillKey(name);
+    if (key && !skills.has(key)) skills.set(key, { skillId: key, proficiency: null });
+  }
+
+  return {
+    skills: Array.from(skills.values()),
+    availabilityHoursPerWeek: profile?.availability_hours ?? candidateProfile?.availability_hours_per_week ?? null,
+    preferredModality: candidateProfile?.preferred_modality ?? null,
+    preferredContractType: candidateProfile?.preferred_contract_type ?? null,
+  };
 }

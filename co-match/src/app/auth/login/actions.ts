@@ -4,6 +4,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { getSupabaseConfig } from '@/lib/supabase/config';
 import { normalizeRole, homePathForRole, type ProfileRole } from '@/lib/auth-roles';
+import { profileFieldsFromRegistration } from '@/lib/profile';
 
 export interface LoginResult {
   success: boolean;
@@ -98,7 +99,7 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
         .upsert({
           id: data.user.id,
           email: data.user.email || email,
-          full_name: data.user.user_metadata?.full_name || '',
+          ...profileFieldsFromRegistration(data.user.user_metadata),
           role,
         }, {
           onConflict: 'id',

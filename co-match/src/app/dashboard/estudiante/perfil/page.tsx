@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import PerfilContent from './PerfilContent'
+import { profileFieldsFromRegistration, preferFilled, clampAvailability } from '@/lib/profile'
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -26,7 +27,7 @@ export default async function PerfilPage() {
   if (!profileData) {
     const { data: created, error: createError } = await supabase
       .from('profiles')
-      .upsert({ id: user.id, email: user.email, role: 'estudiante' }, { onConflict: 'id' })
+      .upsert({ id: user.id, email: user.email, role: 'estudiante', ...profileFieldsFromRegistration(user.user_metadata) }, { onConflict: 'id' })
       .select('id, full_name, email, avatar_url, role, career, experience, availability_hours, phone, student_code, semester, focus, gpa, skills, interests, created_at, updated_at')
       .single()
 
@@ -37,19 +38,22 @@ export default async function PerfilPage() {
     }
   }
 
+  // Datos del registro (teléfono, código) por si el perfil los tiene vacíos
+  const fromRegistration = profileFieldsFromRegistration(user.user_metadata)
+
   // Fallback final usando user_metadata si aún no hay perfil
   const initialProfile = {
     id: user.id,
     email: user.email || '',
-    full_name: profileData?.full_name || user.user_metadata?.full_name || '',
+    full_name: preferFilled(profileData?.full_name, fromRegistration.full_name),
     role: profileData?.role || user.user_metadata?.role || 'estudiante',
-    phone: profileData?.phone || '',
-    student_code: profileData?.student_code || '',
+    phone: preferFilled(profileData?.phone, fromRegistration.phone),
+    student_code: preferFilled(profileData?.student_code, fromRegistration.student_code),
     career: profileData?.career || null,
     semester: profileData?.semester ?? null,
     focus: profileData?.focus || '',
     gpa: profileData?.gpa ?? null,
-    availability_hours: profileData?.availability_hours ?? null,
+    availability_hours: clampAvailability(profileData?.availability_hours),
     skills: profileData?.skills || [],
     interests: profileData?.interests || [],
     experience: profileData?.experience || '',

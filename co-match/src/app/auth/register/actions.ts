@@ -92,9 +92,10 @@ export async function registerAction(payload: RegisterPayload): Promise<Register
       password: payload.password,
       options: {
         data: {
-          full_name: payload.full_name,
-          document_number: '',
-          phone: '',
+          full_name: payload.full_name.trim(),
+          // El formulario pide el código estudiantil en el campo document_number
+          student_code: payload.document_number?.trim() ?? '',
+          phone: payload.phone?.trim() ?? '',
 role: payload.role,
 },
       },
@@ -126,7 +127,9 @@ role: payload.role,
       .upsert({
         id: data.user.id,
         email: data.user.email,
-        full_name: payload.full_name,
+        full_name: payload.full_name.trim(),
+        phone: payload.phone?.trim() ?? '',
+        student_code: payload.document_number?.trim() ?? '',
         role: roleForProfile,
         updated_at: new Date().toISOString(),
       }, {

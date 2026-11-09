@@ -1,6 +1,9 @@
 'use client';
 
-const WEEKLY_HOURS_OPTIONS = [10, 15, 20, 25, 30];
+import { PAT_MAX_HOURS } from '@/lib/profile';
+
+// El PAT permite máximo 25 horas semanales
+const WEEKLY_HOURS_OPTIONS = [5, 10, 15, 20, 25].filter((h) => h <= PAT_MAX_HOURS);
 
 interface WeeklyHoursSelectProps {
   value: string;

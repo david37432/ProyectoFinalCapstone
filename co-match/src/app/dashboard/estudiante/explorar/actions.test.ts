@@ -39,7 +39,7 @@ const publishedVacancy = {
   modality: 'hibrido',
   contract_type: 'pasantia',
   pat_hours_per_week: 20,
-  vacancy_skills: [{ skill_id: 's-python', weight: 1, is_required: true }],
+  vacancy_skills: [{ skill_id: 's-python', weight: 1, is_required: true, skills: { name: 'Python' } }],
 };
 
 beforeEach(() => {
@@ -47,14 +47,11 @@ beforeEach(() => {
   calls = [];
   responses = {
     'vacancies.select': { data: publishedVacancy, error: null },
+    // Habilidades guardadas en el perfil (profiles.skills)
+    'profiles.select': { data: { skills: ['python'], availability_hours: 20 }, error: null },
+    // Preferencias opcionales (candidate_profiles)
     'candidate_profiles.select': {
-      data: {
-        id: 'cp1',
-        availability_hours_per_week: 20,
-        preferred_modality: 'hibrido',
-        preferred_contract_type: 'pasantia',
-        candidate_skills: [{ skill_id: 's-python', proficiency_level: 'avanzado' }],
-      },
+      data: { preferred_modality: 'hibrido', preferred_contract_type: 'pasantia', candidate_skills: [] },
       error: null,
     },
     'applications.insert': { data: null, error: null },
@@ -86,6 +83,13 @@ describe('applyToVacancyAction', () => {
     expect(calls.some((c) => c.op === 'insert')).toBe(false);
   });
 
+  it('usa las habilidades de profiles.skills aunque no haya candidate_skills', async () => {
+    responses['candidate_profiles.select'] = { data: null, error: null };
+    responses['profiles.select'] = { data: { skills: ['PYTHON'], availability_hours: 25 }, error: null };
+    const r = await applyToVacancyAction('v1');
+    expect(r.matchScore).toBeGreaterThanOrEqual(90);
+  });
+
   it('trata una postulación duplicada como éxito', async () => {
     responses['applications.insert'] = { data: null, error: { message: 'dup', code: '23505' } };
     expect((await applyToVacancyAction('v1')).success).toBe(true);
@@ -100,6 +104,7 @@ describe('applyToVacancyAction', () => {
 
   it('funciona aunque el estudiante no tenga perfil de candidato', async () => {
     responses['candidate_profiles.select'] = { data: null, error: null };
+    responses['profiles.select'] = { data: { skills: [], availability_hours: null }, error: null };
     const r = await applyToVacancyAction('v1');
     expect(r.success).toBe(true);
     expect(r.matchScore).toBeLessThan(50);

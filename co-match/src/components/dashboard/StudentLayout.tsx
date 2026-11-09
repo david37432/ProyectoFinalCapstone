@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { logoutAction } from '@/app/auth/login/actions';
 import {
   Compass,
   Briefcase,
@@ -13,6 +14,7 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  LogOut,
 } from 'lucide-react';
 
 const navigation = [
@@ -25,7 +27,29 @@ const navigation = [
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    await logoutAction();
+    router.replace('/auth/login');
+    router.refresh();
+  };
+
+  const logoutButton = (
+    <button
+      type="button"
+      onClick={handleLogout}
+      disabled={loggingOut}
+      className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-danger hover:bg-danger/10 transition-colors disabled:opacity-60"
+    >
+      <LogOut className="w-5 h-5" />
+      {loggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}
+    </button>
+  );
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
@@ -84,6 +108,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
               </Link>
             ))}
           </nav>
+          <div className="p-4 border-t border-neutral-200">{logoutButton}</div>
         </aside>
 
         {sidebarOpen && (
@@ -147,7 +172,8 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
             </Link>
           ))}
         </nav>
-        <div className="p-4 border-t border-neutral-200">
+        <div className="p-4 border-t border-neutral-200 space-y-3">
+          {logoutButton}
           <p className="text-xs text-neutral-500 text-center">
             Universidad de La Sabana - PAT
           </p>

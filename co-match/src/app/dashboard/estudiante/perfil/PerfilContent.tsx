@@ -3,6 +3,15 @@
 import { useState, useEffect, useTransition } from 'react';
 import { Camera, Save, CheckCircle, AlertCircle, Loader2, Plus, Trash2, Edit2 } from 'lucide-react';
 import { updateStudentProfile, type UpdateProfileResult } from './actions';
+import { createClient } from '@/lib/supabase/client';
+import {
+  PAT_MAX_HOURS,
+  availabilityPercent,
+  clampAvailability,
+  validateAvatarFile,
+  avatarPath,
+  AVATAR_BUCKET,
+} from '@/lib/profile';
 
 interface ProfileData {
   id: string
@@ -74,6 +83,7 @@ export default function PerfilContent({ initialProfile, userId }: PerfilContentP
   const [showInterestSelect, setShowInterestSelect] = useState(false);
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   // Log initialProfile on mount for debugging
   useEffect(() => {
@@ -92,25 +102,24 @@ export default function PerfilContent({ initialProfile, userId }: PerfilContentP
 
   const completion = profile ? calculateCompletion(profile) : 0;
 
+  const buildPayload = (p: ProfileData) => ({
+    full_name: p.full_name,
+    phone: p.phone || '',
+    student_code: p.student_code || '',
+    career: p.career || '',
+    semester: p.semester === undefined ? null : p.semester,
+    focus: p.focus || '',
+    gpa: p.gpa === undefined ? null : p.gpa,
+    availability_hours: p.availability_hours ?? null,
+    skills: p.skills,
+    interests: p.interests,
+    experience: p.experience || '',
+    avatar_url: p.avatar_url || null,
+  });
+
   const handleSave = async () => {
     setSaveStatus(null);
-
-    const payload = {
-      full_name: profile.full_name,
-      phone: profile.phone || '',
-      student_code: profile.student_code || '',
-      career: profile.career || '',
-      semester: profile.semester === undefined ? null : profile.semester,
-      focus: profile.focus || '',
-      gpa: profile.gpa === undefined ? null : profile.gpa,
-      availability_hours: profile.availability_hours ?? null,
-      skills: profile.skills,
-      interests: profile.interests,
-      experience: profile.experience || '',
-      avatar_url: profile.avatar_url || null,
-    };
-
-    console.log("👉 PAYLOAD ENVIADO DESDE EL NAVEGADOR:", payload);
+    const payload = buildPayload(profile);
 
     startTransition(async () => {
       const result: UpdateProfileResult = await updateStudentProfile(payload);
@@ -122,6 +131,50 @@ export default function PerfilContent({ initialProfile, userId }: PerfilContentP
         setSaveStatus({ type: 'error', message: result.error });
       }
     });
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite volver a elegir el mismo archivo
+    if (!file) return;
+
+    const validationError = validateAvatarFile(file);
+    if (validationError) {
+      setSaveStatus({ type: 'error', message: validationError });
+      return;
+    }
+
+    setUploadingAvatar(true);
+    setSaveStatus(null);
+    try {
+      const supabase = createClient();
+      const path = avatarPath(userId, file.type);
+      const { error: uploadError } = await supabase.storage
+        .from(AVATAR_BUCKET)
+        .upload(path, file, { contentType: file.type, upsert: true });
+
+      if (uploadError) {
+        setSaveStatus({ type: 'error', message: `No se pudo subir la foto: ${uploadError.message}` });
+        return;
+      }
+
+      const { data } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
+      const updated = { ...profile, avatar_url: data.publicUrl };
+      setProfile(updated);
+
+      // Guardar de una vez la URL en el perfil
+      const result = await updateStudentProfile(buildPayload(updated));
+      setSaveStatus(
+        result.success
+          ? { type: 'success', message: 'Foto actualizada' }
+          : { type: 'error', message: result.error }
+      );
+    } catch (err) {
+      console.error('[avatar] Error inesperado:', err);
+      setSaveStatus({ type: 'error', message: 'Error inesperado al subir la foto' });
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   const addSkill = () => {
@@ -175,13 +228,32 @@ export default function PerfilContent({ initialProfile, userId }: PerfilContentP
         <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
           <div className="relative flex-shrink-0">
             <div className="w-28 h-28 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
-              <span className="text-4xl font-bold text-primary">
-                {profile.full_name?.split(' ').map(n => n[0]).join('') || '?'}
-              </span>
+              {profile.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={profile.avatar_url} alt="Foto de perfil" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-4xl font-bold text-primary">
+                  {profile.full_name?.split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('') || '?'}
+                </span>
+              )}
+              {uploadingAvatar && (
+                <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
+                  <Loader2 className="w-8 h-8 text-white animate-spin" />
+                </div>
+              )}
             </div>
-            <label className="absolute bottom-0 right-0 p-2 bg-primary text-white rounded-full hover:bg-primary-dark transition-colors cursor-pointer">
+            <label
+              className="absolute bottom-0 right-0 p-2 bg-primary text-white rounded-full hover:bg-primary-dark transition-colors cursor-pointer"
+              aria-label="Cambiar foto de perfil"
+            >
               <Camera className="w-5 h-5" />
-              <input type="file" accept="image/*" className="sr-only" />
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="sr-only"
+                onChange={handleAvatarChange}
+                disabled={uploadingAvatar}
+              />
             </label>
           </div>
           <div className="flex-1 min-w-0">
@@ -441,25 +513,25 @@ export default function PerfilContent({ initialProfile, userId }: PerfilContentP
               <input
                 type="number"
                 min="0"
-                max="40"
-                value={profile.availability_hours || ''}
+                max={PAT_MAX_HOURS}
+                value={profile.availability_hours ?? ''}
                 onChange={(e) => {
-                  const value = e.target.value;
-                  setProfile(prev => ({ ...prev, availability_hours: value ? parseInt(value) : null }));
+                  const value = clampAvailability(e.target.value);
+                  setProfile(prev => ({ ...prev, availability_hours: value }));
                 }}
                 placeholder="Horas"
                 className="w-24 px-4 py-2.5 rounded-lg border border-neutral-300 bg-white text-neutral-900 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-center"
               />
-              <span className="text-neutral-700 font-medium">horas/semana disponibles para PAT</span>
+              <span className="text-neutral-700 font-medium">horas/semana disponibles para PAT (máx. {PAT_MAX_HOURS})</span>
             </label>
             <div className="flex-1 h-2 bg-neutral-200 rounded overflow-hidden">
               <div
                 className="h-full bg-primary rounded transition-all duration-300"
-                style={{ width: `${Math.min((profile.availability_hours || 0) / 40 * 100, 100)}%` }}
+                style={{ width: `${availabilityPercent(profile.availability_hours)}%` }}
               />
             </div>
             <span className="text-sm text-neutral-500 w-12 text-right">
-              {Math.round((profile.availability_hours || 0) / 40 * 100)}%
+              {availabilityPercent(profile.availability_hours)}%
             </span>
           </div>
         </section>

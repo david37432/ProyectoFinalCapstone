@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import {
-  firstOf,
+  candidateFromProfiles,
+  skillKey,
   rankCandidates,
   validateVacancyForm,
   type MatchCandidate,
@@ -97,8 +98,7 @@ export async function publishVacancyAction(input: VacancyFormInput): Promise<Pub
 
   // 5. Matching de candidatos
   const candidates = await findMatchingCandidates(supabase, {
-    skillIds: skillIds.ids,
-    skillNames: skillIds.nameById,
+    skillNames: form.skills,
     weeklyHours: form.weeklyHours,
   });
 
@@ -142,17 +142,14 @@ interface CandidateRow extends MatchCandidate {
 
 async function findMatchingCandidates(
   supabase: ServerClient,
-  params: { skillIds: string[]; skillNames: Map<string, string>; weeklyHours: number },
+  params: { skillNames: string[]; weeklyHours: number },
   limit = 5
 ): Promise<MatchedCandidate[]> {
+  // Los estudiantes guardan sus habilidades en profiles.skills (texto)
   const { data, error } = await supabase
-    .from('candidate_profiles')
-    .select(
-      `user_id, availability_hours_per_week, preferred_modality, preferred_contract_type,
-       users(full_name),
-       candidate_skills(skill_id, proficiency_level)`
-    )
-    .eq('is_available_for_pat', true);
+    .from('profiles')
+    .select('id, full_name, skills, availability_hours, role')
+    .in('role', ['estudiante', 'postulante']);
 
   if (error || !data) {
     console.warn('[matching] No se pudieron obtener candidatos:', error?.message);
@@ -160,20 +157,16 @@ async function findMatchingCandidates(
   }
 
   const candidates: CandidateRow[] = data.map((row: any) => ({
-    userId: row.user_id,
-    fullName: firstOf<{ full_name: string }>(row.users)?.full_name ?? 'Sin nombre',
-    availabilityHoursPerWeek: row.availability_hours_per_week,
-    preferredModality: row.preferred_modality,
-    preferredContractType: row.preferred_contract_type,
-    skills: (row.candidate_skills ?? []).map((cs: any) => ({
-      skillId: cs.skill_id,
-      proficiency: cs.proficiency_level,
-    })),
+    userId: row.id,
+    fullName: row.full_name || 'Sin nombre',
+    ...candidateFromProfiles(row),
   }));
+
+  const displayName = new Map(params.skillNames.map((n) => [skillKey(n), n]));
 
   const ranked = rankCandidates(
     {
-      skills: params.skillIds.map((skillId) => ({ skillId })),
+      skills: params.skillNames.map((n) => ({ skillId: skillKey(n) })),
       patHoursPerWeek: params.weeklyHours,
       modality: DEFAULT_MODALITY,
       contractType: DEFAULT_CONTRACT_TYPE,
@@ -186,6 +179,6 @@ async function findMatchingCandidates(
     userId: candidate.userId,
     fullName: candidate.fullName,
     score: match.score,
-    matchedSkills: match.matchedSkillIds.map((id) => params.skillNames.get(id) ?? id),
+    matchedSkills: match.matchedSkillIds.map((id) => displayName.get(id) ?? id),
   }));
 }

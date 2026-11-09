@@ -4,6 +4,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { getSupabaseConfig } from '@/lib/supabase/config';
+import { clampAvailability } from '@/lib/profile';
 
 export interface StudentProfileInput {
   full_name: string;
@@ -101,7 +102,7 @@ export async function updateStudentProfile(payload: StudentProfileInput): Promis
       semester: payload.semester ? Number(payload.semester) : null,
       focus: payload.focus || '',
       gpa: payload.gpa ? Number(payload.gpa) : null,
-      availability_hours: Number(payload.availability_hours || 0),
+      availability_hours: clampAvailability(payload.availability_hours) ?? 0,
       skills: skillsArray,
       interests: interestsArray,
       experience: payload.experience || '',
