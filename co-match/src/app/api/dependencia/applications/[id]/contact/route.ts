@@ -1,4 +1,4 @@
-import { requireAdmin } from '@/lib/supabase/server-auth'
+import { requireAdminApi } from '@/lib/supabase/server-auth'
 import { contactCandidate } from '@/lib/supabase/admin-queries'
 import { NextResponse } from 'next/server'
 
@@ -10,7 +10,9 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await requireAdmin()
+    const auth = await requireAdminApi()
+    if (!auth.user) return auth.response
+    const user = auth.user
     const { id } = await params
     const result = await contactCandidate(id, user.id)
     if (result.error) return NextResponse.json({ error: result.error }, { status: result.status ?? 500 })

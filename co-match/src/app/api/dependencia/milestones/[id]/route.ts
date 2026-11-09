@@ -1,4 +1,4 @@
-import { requireAdmin } from '@/lib/supabase/server-auth'
+import { requireAdminApi } from '@/lib/supabase/server-auth'
 import { updateMilestoneStatus } from '@/lib/supabase/admin-queries'
 import { NextResponse } from 'next/server'
 
@@ -8,7 +8,9 @@ const VALID = ['pending', 'in_progress', 'completed'] as const
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await requireAdmin()
+    const auth = await requireAdminApi()
+    if (!auth.user) return auth.response
+    const user = auth.user
     const { id } = await params
     const body = await request.json().catch(() => ({}))
     const status = body?.status

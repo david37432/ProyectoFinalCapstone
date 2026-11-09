@@ -30,8 +30,9 @@ export interface PublishVacancyResult {
 
 /**
  * Publica una necesidad en la tabla `opportunities` y devuelve los
- * estudiantes más compatibles. Queda en estado 'pending_pat'
- * (Pendiente revisión PAT).
+ * estudiantes más compatibles. Queda PUBLICADA de inmediato para que los
+ * estudiantes la vean en Explorar (aún no existe la pantalla de revisión PAT;
+ * cuando exista, cambiar a OPPORTUNITY_STATUS.PENDING).
  */
 export async function publishVacancyAction(input: VacancyFormInput): Promise<PublishVacancyResult> {
   const validation = validateVacancyForm(input);
@@ -56,7 +57,7 @@ export async function publishVacancyAction(input: VacancyFormInput): Promise<Pub
       required_skills: form.skills,
       weekly_hours: form.weeklyHours,
       duration_months: form.durationMonths,
-      status: OPPORTUNITY_STATUS.PENDING,
+      status: OPPORTUNITY_STATUS.PUBLISHED,
       logged_hours: 0,
     })
     .select('id')
@@ -72,6 +73,7 @@ export async function publishVacancyAction(input: VacancyFormInput): Promise<Pub
   });
 
   revalidatePath('/dashboard/dependencia');
+  revalidatePath('/dashboard/estudiante/explorar');
   return { success: true, vacancyId: opportunity.id, candidates };
 }
 

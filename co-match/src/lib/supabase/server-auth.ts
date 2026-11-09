@@ -99,3 +99,20 @@ export async function requireAdmin(): Promise<AuthUser> {
   const authData = await requireRole(['dependencia'])
   return authData.user
 }
+
+/**
+ * Para rutas API: devuelve el usuario si es dependencia, o una respuesta
+ * 401/403 (redirect() dentro de una ruta API terminaba en error 500).
+ */
+export async function requireAdminApi(): Promise<
+  { user: AuthUser; response: null } | { user: null; response: Response }
+> {
+  const { user } = await getAuthenticatedUser()
+  if (!user) {
+    return { user: null, response: Response.json({ error: 'No autenticado' }, { status: 401 }) }
+  }
+  if (normalizeRole(user.role) !== 'dependencia') {
+    return { user: null, response: Response.json({ error: 'No autorizado' }, { status: 403 }) }
+  }
+  return { user, response: null }
+}

@@ -1,4 +1,4 @@
-import { requireAdmin } from '@/lib/supabase/server-auth'
+import { requireAdminApi } from '@/lib/supabase/server-auth'
 import { getConversationForUser, getMessagesForConversation, sendMessage } from '@/lib/supabase/admin-queries'
 import { NextResponse } from 'next/server'
 
@@ -8,7 +8,9 @@ type Params = { params: Promise<{ id: string }> }
 
 export async function GET(_request: Request, { params }: Params) {
   try {
-    const user = await requireAdmin()
+    const auth = await requireAdminApi()
+    if (!auth.user) return auth.response
+    const user = auth.user
     const { id } = await params
     const { conversation, status } = await getConversationForUser(id, user.id)
     if (!conversation) {
@@ -24,7 +26,9 @@ export async function GET(_request: Request, { params }: Params) {
 
 export async function POST(request: Request, { params }: Params) {
   try {
-    const user = await requireAdmin()
+    const auth = await requireAdminApi()
+    if (!auth.user) return auth.response
+    const user = auth.user
     const { id } = await params
     const body = await request.json().catch(() => ({}))
     const content = typeof body?.content === 'string' ? body.content.trim() : ''

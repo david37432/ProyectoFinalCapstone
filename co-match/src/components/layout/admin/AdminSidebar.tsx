@@ -1,7 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { logoutAction } from '@/app/auth/login/actions';
 import { cn } from '@/lib/utils';
 import { LayoutDashboard, PlusCircle, Users, MessageCircle, ClipboardList, LogOut, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -20,6 +22,16 @@ const navigation = [
 
 export function AdminSidebar({ isCollapsed, onToggle }: AdminSidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    await logoutAction();
+    router.replace('/auth/login');
+    router.refresh();
+  };
 
   return (
     <aside
@@ -55,8 +67,22 @@ export function AdminSidebar({ isCollapsed, onToggle }: AdminSidebarProps) {
           })}
         </ul>
 
-        <div className="pt-4 border-t border-neutral-200">
+        <div className="pt-4 border-t border-neutral-200 space-y-1">
           <button
+            type="button"
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-danger hover:bg-danger/10 transition-colors disabled:opacity-60',
+              isCollapsed && 'justify-center'
+            )}
+            title={isCollapsed ? 'Cerrar sesión' : undefined}
+          >
+            <LogOut className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
+            {!isCollapsed && <span className="font-medium text-sm">{loggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}</span>}
+          </button>
+          <button
+            type="button"
             onClick={onToggle}
             className={cn(
               'w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 transition-colors',

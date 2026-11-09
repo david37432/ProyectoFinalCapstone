@@ -165,7 +165,7 @@ export default function PublicarNecesidadPage() {
               <h1 className="text-2xl font-bold text-neutral-900">Necesidad publicada</h1>
             </div>
             <p className="text-neutral-600 mb-6">
-              Quedó en estado <strong>Pendiente Revisión PAT</strong>. Estos son los candidatos más compatibles:
+              Ya está <strong>publicada</strong> y los estudiantes pueden verla en Explorar. Estos son los candidatos más compatibles:
             </p>
             {published.candidates.length > 0 ? (
               <ul className="divide-y divide-neutral-200 mb-6">
@@ -333,8 +333,8 @@ export default function PublicarNecesidadPage() {
                 <div className="bg-white border border-neutral-200 rounded-xl p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold text-neutral-900">Vista Previa</h3>
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-warning/10 text-warning">
-                      Pendiente Revisión PAT
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-success/10 text-success">
+                      Se publicará al guardar
                     </span>
                   </div>
                   <div className="space-y-4">

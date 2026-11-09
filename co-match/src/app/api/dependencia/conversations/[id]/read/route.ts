@@ -1,4 +1,4 @@
-import { requireAdmin } from '@/lib/supabase/server-auth'
+import { requireAdminApi } from '@/lib/supabase/server-auth'
 import { getConversationForUser, markMessagesAsRead } from '@/lib/supabase/admin-queries'
 import { NextResponse } from 'next/server'
 
@@ -6,7 +6,9 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await requireAdmin()
+    const auth = await requireAdminApi()
+    if (!auth.user) return auth.response
+    const user = auth.user
     const { id } = await params
     const { conversation, status } = await getConversationForUser(id, user.id)
     if (!conversation) {
