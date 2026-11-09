@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { normalizeRole } from '@/lib/auth-roles';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { BottomNavigation } from '@/components/layout/BottomNavigation';
@@ -149,7 +150,7 @@ export default function ProfilePage() {
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="text-2xl font-bold text-neutral-900">{user.full_name}</h1>
-                <Badge variant="primary">{user.role === 'postulante' ? 'Estudiante PAT' : user.role}</Badge>
+                <Badge variant="primary">{normalizeRole(user.role) === 'estudiante' ? 'Estudiante PAT' : 'Dependencia'}</Badge>
               </div>
               <p className="text-neutral-600 mt-1">{user.email}</p>
               <div className="flex items-center gap-4 mt-2 text-sm text-neutral-500">

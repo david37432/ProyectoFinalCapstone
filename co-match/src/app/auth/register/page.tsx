@@ -9,6 +9,7 @@ export default function RegisterPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState<{
     email: string;
@@ -68,6 +69,12 @@ export default function RegisterPage() {
       return;
     }
 
+    if (result.needsEmailConfirmation) {
+      setIsLoading(false);
+      setNotice(`Cuenta creada. Te enviamos un correo a ${formData.email}: ábrelo y confirma tu cuenta antes de iniciar sesión.`);
+      return;
+    }
+
     if (result.redirectTo) {
       router.push(result.redirectTo);
     } else {
@@ -118,6 +125,13 @@ export default function RegisterPage() {
               {step === 1 ? 'Información de acceso y tipo de usuario' : 'Datos personales y contacto'}
             </p>
           </div>
+
+          {notice && (
+            <div className="mb-4 p-3 rounded-lg bg-success/10 text-success text-sm" role="status">
+              {notice}{' '}
+              <a href="/auth/login" className="underline font-medium">Ir a iniciar sesión</a>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-danger/10 text-danger text-sm" role="alert">

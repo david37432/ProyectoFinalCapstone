@@ -19,6 +19,8 @@ export interface RegisterResult {
   success: boolean;
   error?: string;
   redirectTo?: string;
+  /** true si Supabase exige confirmar el correo antes de iniciar sesión */
+  needsEmailConfirmation?: boolean;
 }
 
 export async function registerAction(payload: RegisterPayload): Promise<RegisterResult> {
@@ -110,9 +112,15 @@ role: payload.role,
       return { success: false, error: 'Este correo ya está registrado' };
     }
 
-    // Insertar o actualizar explícitamente la tabla profiles
     const roleForProfile = toProfileRole(payload.role);
-    
+
+    // Si "Confirm email" está activo en Supabase no hay sesión todavía:
+    // el perfil se crea en el primer login (loginAction) y no se puede entrar al dashboard.
+    if (!data.session) {
+      return { success: true, needsEmailConfirmation: true };
+    }
+
+    // Insertar o actualizar explícitamente la tabla profiles
     const { error: profileError } = await supabase
       .from('profiles')
       .upsert({

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { normalizeRole } from '@/lib/auth-roles';
 import { usePathname } from 'next/navigation';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
@@ -25,7 +26,9 @@ export function Header({ user, onSignOut }: HeaderProps) {
     { name: 'Perfil', href: '/profile', roles: ['postulante', 'reclutador', 'jefe_area', 'admin'] },
   ];
 
-  const userNav = navigation.filter((item) => item.roles.includes(user?.role || ''));
+  const userNav = navigation.filter((item) =>
+    item.roles.map(normalizeRole).includes(normalizeRole(user?.role))
+  );
 
   return (
     <header className="fixed top-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-sm border-b border-neutral-200">

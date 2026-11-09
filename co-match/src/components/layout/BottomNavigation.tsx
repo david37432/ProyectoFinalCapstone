@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { normalizeRole } from '@/lib/auth-roles';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
@@ -18,7 +19,9 @@ export function BottomNavigation({ userRole }: BottomNavigationProps) {
     { name: 'Ajustes', href: '/profile/settings', icon: SettingsIcon, roles: ['postulante', 'reclutador', 'jefe_area', 'admin'] },
   ];
 
-  const userNav = navigation.filter((item) => item.roles.includes(userRole || ''));
+  const userNav = navigation.filter((item) =>
+    item.roles.map(normalizeRole).includes(normalizeRole(userRole))
+  );
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-neutral-200 md:hidden" aria-label="Navegación inferior">

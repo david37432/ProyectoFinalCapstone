@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { getSupabaseConfig } from '@/lib/supabase/config'
+import { dashboardRedirectFor } from '@/lib/auth-roles'
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -38,33 +39,21 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Si hay usuario autenticado intentando entrar a /dashboard/dependencia
-  if (user && url.pathname.startsWith('/dashboard/dependencia')) {
-    const { data: profile, error: profileError } = await supabase
+  // Usuario autenticado: verificar que su rol corresponda a la sección
+  if (user && (url.pathname.startsWith('/dashboard/dependencia') || url.pathname.startsWith('/dashboard/estudiante'))) {
+    const { data: profile } = await supabase
       .from('profiles')
-      .select('role, full_name')
+      .select('role')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
-    console.log(`[Middleware] 👤 Usuario: ${user.email} | Rol detectado: "${profile?.role}" | Error Profile:`, profileError?.message || 'Ninguno')
+    // Si el perfil aún no existe se usa el rol de la metadata del registro
+    const role = profile?.role ?? user.user_metadata?.role
+    const target = dashboardRedirectFor(url.pathname, role)
 
-    // Si la consulta falla o el rol no es autorizado
-    const allowedRoles = ['dependencia', 'reclutador', 'jefe_area', 'pat', 'admin']
-    if (!profile || !allowedRoles.includes(profile.role)) {
-      console.warn(`[Middleware] ⚠️ Acceso denegado a ${url.pathname} para el rol "${profile?.role}". Redirigiendo...`)
-      
-      if (profile?.role === 'estudiante') {
-        url.pathname = '/dashboard/estudiante/explorar'
-        return NextResponse.redirect(url)
-      }
-      
-      // Si el perfil no existe aun pero el usuario está autenticado, no redirigir a login para evitar bucles
-      if (!profile) {
-        console.log("[Middleware] Perfil aún no creado en profiles. Permitiendo paso temporal.")
-        return response
-      }
-
-      url.pathname = '/auth/login'
+    if (target) {
+      console.warn(`[Middleware] Rol "${role}" no puede entrar a ${url.pathname}. Redirigiendo a ${target}`)
+      url.pathname = target
       return NextResponse.redirect(url)
     }
   }

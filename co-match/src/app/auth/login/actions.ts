@@ -3,6 +3,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { getSupabaseConfig } from '@/lib/supabase/config';
+import { normalizeRole, homePathForRole, type ProfileRole } from '@/lib/auth-roles';
 
 export interface LoginResult {
   success: boolean;
@@ -78,7 +79,8 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
   }
 
   // Paso B: Obtención / Creación de Perfil (Resiliente a registros antiguos)
-  let role = 'estudiante';
+  // En la BD el rol puede venir como 'postulante', 'estudiante', 'reclutador', etc.
+  let role: ProfileRole = normalizeRole(data.user.user_metadata?.role);
 
   try {
     const { data: profile, error: profileError } = await supabase
@@ -87,16 +89,10 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
       .eq('id', data.user.id)
       .maybeSingle();
 
-    // Si el perfil no existe o hay error, crearlo automáticamente
-    if (profileError || !profile) {
-      const roleFromMetadata = data.user.user_metadata?.role;
-
-      if (roleFromMetadata === 'reclutador' || roleFromMetadata === 'dependencia') {
-        role = 'dependencia';
-      } else if (roleFromMetadata === 'administrador' || roleFromMetadata === 'admin') {
-        role = 'dependencia';
-      }
-
+    if (profile && !profileError) {
+      role = normalizeRole(profile.role);
+    } else {
+      // Si el perfil no existe (p. ej. el registro no pudo crearlo por RLS), crearlo ahora que hay sesión
       const { error: upsertError } = await supabase
         .from('profiles')
         .upsert({
@@ -112,19 +108,9 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
       if (upsertError) {
         console.warn('Perfil upsert warning (non-blocking):', upsertError.message);
       }
-    } else {
-      // Perfil existe, usar su rol
-      role = profile.role;
     }
   } catch (err) {
-    // Manejo tolerante a fallos: si falla la tabla profiles (ej. cache de esquema)
     console.warn('Error consultando profiles, usando metadata:', err);
-    const roleFromMetadata = data.user.user_metadata?.role;
-    if (roleFromMetadata === 'reclutador' || roleFromMetadata === 'dependencia') {
-      role = 'dependencia';
-    } else if (roleFromMetadata === 'administrador' || roleFromMetadata === 'admin') {
-      role = 'dependencia';
-    }
   }
 
   // Obtener el role_id correspondiente en la tabla roles
@@ -155,9 +141,7 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
 
   return {
     success: true,
-    redirectTo: role === 'estudiante'
-      ? '/dashboard/estudiante/explorar'
-      : '/dashboard/dependencia',
+    redirectTo: homePathForRole(role),
   };
 }
 
