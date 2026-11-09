@@ -4,6 +4,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getSupabaseConfig } from '@/lib/supabase/config';
+import { toProfileRole, homePathForRole } from '@/lib/auth-roles';
 
 export interface RegisterPayload {
   email: string;
@@ -61,10 +62,6 @@ export async function registerAction(payload: RegisterPayload): Promise<Register
     return { success: false, error: 'El correo debe ser institucional (@unisabana.edu.co)' };
   }
 
-  if (payload.password !== payload.password) {
-    return { success: false, error: 'Las contraseñas no coinciden' };
-  }
-
   try {
     const supabase = createServerClient(
       url,
@@ -114,15 +111,15 @@ role: payload.role,
     }
 
     // Insertar o actualizar explícitamente la tabla profiles
-    const roleForProfile = 'reclutador' === 'reclutador' ? 'dependencia' : 'estudiante';
+    const roleForProfile = toProfileRole(payload.role);
     
     const { error: profileError } = await supabase
       .from('profiles')
       .upsert({
         id: data.user.id,
         email: data.user.email,
-        full_name: '',
-        role: 'dependencia',
+        full_name: payload.full_name,
+        role: roleForProfile,
         updated_at: new Date().toISOString(),
       }, {
         onConflict: 'id',
@@ -134,9 +131,7 @@ role: payload.role,
     }
 
     // Determinar redirección según el rol
-    const redirectTo = 'reclutador' === 'reclutador' 
-      ? '/dashboard/dependencia' 
-      : '/dashboard/estudiante/explorar';
+    const redirectTo = homePathForRole(roleForProfile);
 
     return { success: true, redirectTo };
 

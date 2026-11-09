@@ -12,7 +12,7 @@ interface ActionButtonsProps {
 export function ActionButtons({ onCancel, onSubmit, isLoading }: ActionButtonsProps) {
   return (
     <div className="flex gap-3 pt-4 border-t border-neutral-200">
-      <Button variant="secondary" onClick={onCancel} disabled={isLoading}>
+      <Button type="button" variant="secondary" onClick={onCancel} disabled={isLoading}>
         <X className="w-4 h-4 mr-2" />
         Cancelar
       </Button>

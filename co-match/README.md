@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CO-MATCH
 
-## Getting Started
+Plataforma de la Universidad de La Sabana que conecta a estudiantes con dependencias de la universidad
+para proyectos de automatización del Programa de Asistencia Técnica (PAT), usando un algoritmo de
+compatibilidad (matching).
 
-First, run the development server:
+## Stack
+
+- **Frontend / Backend:** Next.js 16 (App Router, Server Actions), React 19, TypeScript, Tailwind CSS 4
+- **Base de datos y autenticación:** Supabase (PostgreSQL + Auth + Row Level Security)
+- **Tests:** Vitest
+- **CI:** GitHub Actions (`.github/workflows/ci.yml`)
+
+## Puesta en marcha
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd co-match
+npm install
+cp .env.example .env.local   # y completa las variables de Supabase
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Base de datos
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+En el panel de Supabase → **SQL Editor**, ejecuta en orden los archivos de `supabase/migrations/`.
+La última migración (`20261108000000_core_publish_apply_matching.sql`) carga el catálogo de
+departamentos y habilidades y agrega los permisos necesarios para publicar vacantes, postularse,
+calcular el matching y enviar reportes de errores.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Scripts
 
-## Learn More
+| Comando | Descripción |
+|---|---|
+| `npm run dev` | Servidor de desarrollo |
+| `npm run build` | Build de producción |
+| `npm test` | Tests unitarios (Vitest) |
+| `npm run typecheck` | Verificación de tipos |
+| `npm run lint` | ESLint |
 
-To learn more about Next.js, take a look at the following resources:
+## Estructura
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+src/
+├── app/
+│   ├── auth/                    # Login, registro, recuperación de contraseña
+│   ├── dashboard/estudiante/    # Explorar, mis postulaciones, mensajes, perfil, avisos
+│   ├── dashboard/dependencia/   # Panel, publicar necesidad, candidatos, mensajes, seguimiento
+│   ├── api/dependencia/         # Endpoints REST (ver docs/API.md)
+│   ├── privacidad/ terminos/    # Política de datos (Ley 1581) y términos de uso
+│   └── reportar/                # Reporte de errores y sugerencias
+├── lib/
+│   ├── matching.ts              # Algoritmo de compatibilidad (función pura + tests)
+│   └── supabase/                # Clientes y consultas
+supabase/migrations/             # Esquema SQL y políticas RLS
+docs/API.md                      # Documentación de endpoints y acciones
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Documentación
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [API y algoritmo de matching](docs/API.md)

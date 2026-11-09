@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Search, Filter, Bookmark, X, ExternalLink, Loader2 } from 'lucide-react';
+import { applyToVacancyAction, withdrawApplicationAction } from './actions';
 
 interface Vacancy {
   id: string
@@ -38,7 +39,11 @@ export default function ExplorarContent({ initialVacancies, userId }: ExplorarCo
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
-  const [interestedIds, setInterestedIds] = useState<Set<string>>(new Set());
+  const [interestedIds, setInterestedIds] = useState<Set<string>>(
+    () => new Set(initialVacancies.filter(v => v.is_applied).map(v => v.id))
+  );
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  const [actionError, setActionError] = useState<string | null>(null);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
 
@@ -82,23 +87,39 @@ export default function ExplorarContent({ initialVacancies, userId }: ExplorarCo
     });
   };
 
+  const setInSet = (setter: typeof setInterestedIds, id: string, present: boolean) => {
+    setter(prev => {
+      const next = new Set(prev);
+      if (present) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
   const toggleInterested = async (id: string) => {
+    if (pendingIds.has(id)) return;
     const currentlyInterested = interestedIds.has(id);
-    if (currentlyInterested) {
-      setInterestedIds(prev => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-      // TODO: Remove application via API
+    setActionError(null);
+    setInSet(setPendingIds, id, true);
+    // Actualización optimista
+    setInSet(setInterestedIds, id, !currentlyInterested);
+
+    const result = currentlyInterested
+      ? await withdrawApplicationAction(id)
+      : await applyToVacancyAction(id);
+
+    if (!result.success) {
+      setInSet(setInterestedIds, id, currentlyInterested); // revertir
+      setActionError(result.error ?? 'No se pudo completar la acción');
     } else {
-      setInterestedIds(prev => {
-        const next = new Set(prev);
-        next.add(id);
-        return next;
-      });
-      // TODO: Create application via API
+      setVacancies(prev => prev.map(v => v.id === id ? {
+        ...v,
+        is_applied: !currentlyInterested,
+        match_score: result.matchScore ?? v.match_score,
+        candidates_count: Math.max(0, v.candidates_count + (currentlyInterested ? -1 : 1)),
+      } : v));
     }
+    setInSet(setPendingIds, id, false);
   };
 
   const dismiss = (id: string) => {
@@ -158,6 +179,12 @@ export default function ExplorarContent({ initialVacancies, userId }: ExplorarCo
           Explora proyectos recomendados según tu perfil, habilidades e intereses.
         </p>
       </div>
+
+      {actionError && (
+        <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+          {actionError}
+        </div>
+      )}
 
       {/* Search & Filters */}
       <div className="space-y-4">
@@ -291,14 +318,14 @@ export default function ExplorarContent({ initialVacancies, userId }: ExplorarCo
                 <div className="flex items-center gap-2 pt-2 border-t border-neutral-100">
                   <button
                     onClick={() => toggleInterested(vacancy.id)}
+                    disabled={pendingIds.has(vacancy.id)}
                     className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-colors ${
-                      interestedIds.has(vacancy.id) || vacancy.is_applied
+                      interestedIds.has(vacancy.id)
                         ? 'bg-primary text-white'
                         : 'bg-primary text-white hover:bg-primary-dark'
                     }`}
-                    disabled={vacancy.is_applied}
                   >
-                    {interestedIds.has(vacancy.id) || vacancy.is_applied ? 'Interesado' : 'Me interesa'}
+                    {interestedIds.has(vacancy.id) ? 'Interesado' : 'Me interesa'}
                   </button>
                   <button
                     onClick={() => toggleSaved(vacancy.id)}

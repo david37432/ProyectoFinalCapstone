@@ -1,4 +1,5 @@
 import { createClient } from './server'
+import { computeMatchScore, firstOf } from '@/lib/matching'
 
 interface VacancyData {
   id: string
@@ -82,9 +83,8 @@ export async function getStudentVacancies(userId: string): Promise<StudentVacanc
   const { data: candidateSkills } = await supabase
     .from('candidate_skills')
     .select('skill_id, proficiency_level')
-    .eq('candidate_profile_id', profile?.id)
+    .eq('candidate_profile_id', profile?.id ?? '')
 
-  const candidateSkillIds = candidateSkills?.map((cs: any) => cs.skill_id) || []
 
   const { data: vacancies } = await supabase
     .from('vacancies')
@@ -98,7 +98,7 @@ export async function getStudentVacancies(userId: string): Promise<StudentVacanc
       modality,
       pat_hours_per_week,
       status,
-      vacancy_skills(skill_id, skills(name))
+      vacancy_skills(skill_id, weight, is_required, skills(name))
     `)
     .eq('status', 'publicada')
     .order('publication_date', { ascending: false })
@@ -131,24 +131,32 @@ export async function getStudentVacancies(userId: string): Promise<StudentVacanc
   const appliedVacancyIds = new Set(myApplications?.map((a: any) => a.vacancy_id) || [])
 
   return vacancies.map((vacancy: any) => {
-    const skills = vacancy.vacancy_skills?.map((vs: { skill_id: string; skills: { name: string }[] }) => vs.skills[0]?.name).filter(Boolean) || []
-    const vacancySkillIds = vacancy.vacancy_skills?.map((vs: { skill_id: string }) => vs.skill_id) || []
+    const vacancySkills = vacancy.vacancy_skills ?? []
+    const skills = vacancySkills
+      .map((vs: any) => firstOf<{ name: string }>(vs.skills)?.name)
+      .filter(Boolean) as string[]
 
-    let matchScore = 0
-    if (vacancySkillIds.length > 0) {
-      const matchedSkills = vacancySkillIds.filter((id: any) => candidateSkillIds.includes(id)).length
-      matchScore = Math.round((matchedSkills / vacancySkillIds.length) * 100)
-    }
-
-    if (profile?.preferred_modality && profile.preferred_modality !== 'cualquiera' && 
-        vacancy.modality === profile.preferred_modality) {
-      matchScore = Math.min(100, matchScore + 10)
-    }
-
-    if (profile?.preferred_contract_type && profile.preferred_contract_type !== 'cualquiera' && 
-        vacancy.contract_type === profile.preferred_contract_type) {
-      matchScore = Math.min(100, matchScore + 5)
-    }
+    const matchScore = computeMatchScore(
+      {
+        skills: vacancySkills.map((vs: any) => ({
+          skillId: vs.skill_id,
+          weight: vs.weight ?? 1,
+          isRequired: vs.is_required ?? true,
+        })),
+        patHoursPerWeek: vacancy.pat_hours_per_week,
+        modality: vacancy.modality,
+        contractType: vacancy.contract_type,
+      },
+      {
+        skills: (candidateSkills ?? []).map((cs: any) => ({
+          skillId: cs.skill_id,
+          proficiency: cs.proficiency_level,
+        })),
+        availabilityHoursPerWeek: profile?.availability_hours_per_week ?? null,
+        preferredModality: profile?.preferred_modality ?? null,
+        preferredContractType: profile?.preferred_contract_type ?? null,
+      }
+    )
 
     return {
       id: vacancy.id,

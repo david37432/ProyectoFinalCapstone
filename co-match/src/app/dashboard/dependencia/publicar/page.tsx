@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { publishVacancyAction, type MatchedCandidate } from './actions';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
@@ -38,20 +38,13 @@ const DEPARTMENTS = [
   'Centro de Emprendimiento',
 ];
 
-interface PublicarNecesidadPageProps {
-  user: {
-    id: string;
-    full_name: string;
-    email: string;
-    role: string;
-    department_name: string;
-  };
-}
 
-export default function PublicarNecesidadPage({ user }: PublicarNecesidadPageProps) {
+export default function PublicarNecesidadPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [published, setPublished] = useState<{ candidates: MatchedCandidate[] } | null>(null);
   
   const [formData, setFormData] = useState({
     title: '',
@@ -135,49 +128,71 @@ export default function PublicarNecesidadPage({ user }: PublicarNecesidadPagePro
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
-    
+
     setIsLoading(true);
     setErrors({});
-    
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      alert('Debes iniciar sesión para publicar una necesidad');
-      return;
+    setSubmitError(null);
+
+    try {
+      const result = await publishVacancyAction(formData);
+      if (!result.success) {
+        if (result.fieldErrors) setErrors(result.fieldErrors);
+        setSubmitError(result.error ?? 'No se pudo publicar la necesidad');
+        return;
+      }
+      setPublished({ candidates: result.candidates ?? [] });
+    } catch (err) {
+      console.error('[publicar] Error inesperado:', err);
+      setSubmitError('Error inesperado al publicar la necesidad');
+    } finally {
+      setIsLoading(false);
     }
-
-    // TODO: Implementar inserción en Supabase
-    // const { data: newOp, error } = await supabase
-    //   .from('opportunities')
-    //   .insert({
-    //     dependency_id: user.id,
-    //     title: formData.title,
-    //     area: formData.department,
-    //     description: formData.description,
-    //     required_skills: formData.skills,
-    //     weekly_hours: Number(formData.weeklyHours),
-    //     duration_months: Number(formData.durationMonths),
-    //     status: 'pending_pat'
-    //   })
-    //   .select()
-    //   .single();
-
-    // if (error) {
-    //   alert('Error al publicar: ' + error.message);
-    //   return;
-    // }
-
-    // TODO: Implementar algoritmo de matching y mostrar candidatos
-    
-    alert('Necesidad publicada exitosamente (simulación)');
-    router.push('/dashboard/dependencia');
   };
 
   const handleCancel = () => {
     router.push('/dashboard/dependencia');
+  }
+
+  if (published) {
+    return (
+      <div className="min-h-screen bg-neutral-50">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div className="bg-white border border-neutral-200 rounded-xl p-8">
+            <div className="flex items-center gap-3 mb-2">
+              <Check className="w-6 h-6 text-success" />
+              <h1 className="text-2xl font-bold text-neutral-900">Necesidad publicada</h1>
+            </div>
+            <p className="text-neutral-600 mb-6">
+              Quedó en estado <strong>Pendiente Revisión PAT</strong>. Estos son los candidatos más compatibles:
+            </p>
+            {published.candidates.length > 0 ? (
+              <ul className="divide-y divide-neutral-200 mb-6">
+                {published.candidates.map((c) => (
+                  <li key={c.userId} className="py-3 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="font-medium text-neutral-900">{c.fullName}</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {c.matchedSkills.map((s) => (
+                          <Badge key={s} variant="outline" className="text-xs">{s}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <span className="text-lg font-semibold text-primary">{c.score}%</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-neutral-500 mb-6">
+                Aún no hay estudiantes con un perfil compatible. Te notificaremos cuando se postulen.
+              </p>
+            )}
+            <Button onClick={() => router.push('/dashboard/dependencia')}>Volver al panel</Button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -297,6 +312,12 @@ export default function PublicarNecesidadPage({ user }: PublicarNecesidadPagePro
                   </div>
                 </div>
 
+                {submitError && (
+                  <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+                    {submitError}
+                  </div>
+                )}
+
                 {/* Botones de Acción */}
                 <ActionButtons
                   onCancel={handleCancel}
@@ -372,7 +393,7 @@ export default function PublicarNecesidadPage({ user }: PublicarNecesidadPagePro
                           )}
                         </div>
                         <p className="text-sm text-primary font-medium">
-                          ~{Math.max(3, formData.skills.length * 2)} candidatos potenciales
+                          Al publicar verás los candidatos ordenados por compatibilidad
                         </p>
                       </>
                     ) : (

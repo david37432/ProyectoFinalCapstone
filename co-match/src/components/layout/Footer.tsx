@@ -34,9 +34,7 @@ export function Footer() {
             <h4 className="font-semibold text-neutral-900 mb-4">Soporte</h4>
             <nav aria-label="Soporte">
               <ul className="space-y-2">
-                <li><Link href="/ayuda" className="text-neutral-600 hover:text-primary text-sm transition-colors">Centro de ayuda</Link></li>
-                <li><Link href="/contacto" className="text-neutral-600 hover:text-primary text-sm transition-colors">Contacto</Link></li>
-                <li><Link href="/faq" className="text-neutral-600 hover:text-primary text-sm transition-colors">Preguntas frecuentes</Link></li>
+                <li><Link href="/reportar" className="text-neutral-600 hover:text-primary text-sm transition-colors">Reportar un problema</Link></li>
               </ul>
             </nav>
           </div>
@@ -47,7 +45,6 @@ export function Footer() {
               <ul className="space-y-2">
                 <li><Link href="/terminos" className="text-neutral-600 hover:text-primary text-sm transition-colors">Términos y condiciones</Link></li>
                 <li><Link href="/privacidad" className="text-neutral-600 hover:text-primary text-sm transition-colors">Política de privacidad</Link></li>
-                <li><Link href="/cookies" className="text-neutral-600 hover:text-primary text-sm transition-colors">Política de cookies</Link></li>
               </ul>
             </nav>
           </div>
@@ -55,7 +52,7 @@ export function Footer() {
 
         <div className="mt-8 pt-8 border-t border-neutral-200 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-neutral-500 text-sm">
-            © 2024 Universidad de La Sabana. Todos los derechos reservados.
+            © {new Date().getFullYear()} Universidad de La Sabana. Todos los derechos reservados.
           </p>
           <div className="flex items-center gap-4">
             <a href="https://unisabana.edu.co" target="_blank" rel="noopener noreferrer" className="text-neutral-500 hover:text-primary text-sm transition-colors">
