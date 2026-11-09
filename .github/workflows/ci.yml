@@ -44,8 +44,10 @@ jobs:
       - run: npx playwright test
         env:
           CI: true
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+          # Valores ficticios: las pruebas e2e no llaman al Supabase real, pero el
+          # middleware solo protege /dashboard si Supabase está "configurado".
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_placeholder
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
