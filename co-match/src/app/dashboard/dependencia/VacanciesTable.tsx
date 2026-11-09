@@ -12,7 +12,8 @@ interface VacanciesTableProps {
 const statusConfig: Record<string, { label: string; variant: 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'outline' }> = {
   publicada: { label: 'Publicada', variant: 'success' },
   borrador: { label: 'Borrador', variant: 'outline' },
-  en_aprobacion: { label: 'En aprobación', variant: 'warning' },
+  en_aprobacion: { label: 'Pendiente revisión PAT', variant: 'warning' },
+  en_curso: { label: 'En curso', variant: 'primary' },
   cerrada: { label: 'Cerrada', variant: 'default' },
   cancelada: { label: 'Cancelada', variant: 'danger' },
 };

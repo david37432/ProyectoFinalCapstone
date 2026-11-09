@@ -1,6 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import StudentMessagesPage from './StudentMessagesPage';
+import { studentApplicationStatus } from '@/lib/data/model';
 
 interface Message {
   id: string;
@@ -34,86 +36,60 @@ export default async function MessagesPage() {
     redirect('/auth/login');
   }
 
-  // Obtener postulaciones aceptadas/entrevista del estudiante con mensajes
-  const { data: conversations, error } = await supabase
-    .from('applications')
-    .select(`
-      id,
-      status,
-      vacancy_id,
-      updated_at,
-      vacancies (
-        id,
-        title,
-        department_id,
-        departments (id, name)
-      ),
-      messages (
-        id,
-        content,
-        sender_id,
-        is_read,
-        created_at,
-        sender:users!sender_id (
-          id,
-          full_name,
-          email,
-          role_id,
-          roles (name)
-        )
-      )
-    `)
-    .eq('candidate_id', user.id)
-    .in('status', ['aceptada', 'entrevista'])
-    .order('updated_at', { ascending: false });
+  // Conversaciones del estudiante (las crea la dependencia al contactarlo)
+  const { data: convRows, error } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('student_id', user.id)
+    .order('last_message_at', { ascending: false, nullsFirst: false });
 
   if (error) {
     console.error('Error fetching conversations:', error);
   }
+  const convs = (convRows ?? []) as any[];
 
-  // Filtrar solo conversaciones que tienen al menos un mensaje de la dependencia/admin
-  const validConversations = (conversations || [])
-    .filter((app: any) => app.messages && app.messages.length > 0)
-    .map((app: any) => {
-      const messages = app.messages
-        .sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-      
-      const lastMessage = messages[messages.length - 1];
-      const unreadCount = messages.filter((m: any) => !m.is_read && m.sender_id !== user.id).length;
-      
-      // Encontrar el último mensaje de la dependencia/admin
-      const lastAdminMessage = messages
-        .filter((m: any) => m.sender_id !== user.id)
-        .pop();
-      
-      // Solo incluir si hay al menos un mensaje de la dependencia/admin
-      if (!lastAdminMessage) return null;
+  const oppIds = [...new Set(convs.map((c) => c.opportunity_id))];
+  const convIds = convs.map((c) => c.id);
 
-      const vacancy = app.vacancies as any;
-      const department = vacancy?.departments?.[0] as any;
-      
-      return {
-        applicationId: app.id,
-        vacancyId: vacancy?.id,
-        vacancyTitle: vacancy?.title,
-        departmentName: department?.name || 'Sin departamento',
-        status: app.status,
-        lastMessage: lastMessage?.content || '',
-        lastMessageTime: lastMessage?.created_at,
-        unreadCount,
-        lastAdminMessage: lastAdminMessage,
-        messages: messages.map((m: any) => ({
-          id: m.id,
-          content: m.content,
-          senderId: m.sender_id,
-          isOwn: m.sender_id === user.id,
-          isRead: m.is_read,
-          createdAt: m.created_at,
-          sender: m.sender
-        })),
-      };
-    })
-    .filter((c: Conversation | null): c is Conversation => c !== null);
+  const [{ data: opps }, { data: msgs }, { data: apps }] = await Promise.all([
+    oppIds.length
+      ? supabase.from('opportunities').select('id, title, area').in('id', oppIds)
+      : Promise.resolve({ data: [] as any[] }),
+    convIds.length
+      ? supabase.from('messages').select('*').in('conversation_id', convIds).order('created_at', { ascending: true })
+      : Promise.resolve({ data: [] as any[] }),
+    oppIds.length
+      ? supabase.from('applications').select('*').eq('student_id', user.id).in('opportunity_id', oppIds)
+      : Promise.resolve({ data: [] as any[] }),
+  ]);
+
+  const oppById = new Map((opps ?? []).map((o: any) => [o.id, o]));
+
+  const validConversations: Conversation[] = convs.map((c) => {
+    const opp: any = oppById.get(c.opportunity_id);
+    const messages = (msgs ?? []).filter((m: any) => m.conversation_id === c.id);
+    const last = messages[messages.length - 1];
+    const app = (apps ?? []).find((a: any) => a.opportunity_id === c.opportunity_id);
+    return {
+      applicationId: c.id, // id de la conversación
+      vacancyId: c.opportunity_id,
+      vacancyTitle: opp?.title || 'Proyecto',
+      departmentName: opp?.area || 'Dependencia',
+      status: app ? studentApplicationStatus(app) : 'entrevista',
+      lastMessage: last?.content || c.last_message || '',
+      lastMessageTime: last?.created_at || c.last_message_at || c.created_at,
+      unreadCount: messages.filter((m: any) => !m.is_read && m.sender_id !== user.id).length,
+      lastAdminMessage: [...messages].reverse().find((m: any) => m.sender_id !== user.id) ?? null,
+      messages: messages.map((m: any) => ({
+        id: m.id,
+        content: m.content,
+        senderId: m.sender_id,
+        isOwn: m.sender_id === user.id,
+        isRead: m.is_read,
+        createdAt: m.created_at,
+      })),
+    };
+  });
 
   return <StudentMessagesPage initialConversations={validConversations} userId={user.id} />;
 }

@@ -114,32 +114,6 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
     console.warn('Error consultando profiles, usando metadata:', err);
   }
 
-  // Obtener el role_id correspondiente en la tabla roles
-  let roleId: string | null = null;
-  if (role === 'dependencia') {
-    const { data: roleData } = await supabase
-      .from('roles')
-      .select('id')
-      .eq('name', 'dependencia')
-      .single();
-    roleId = roleData?.id || null;
-  } else if (role === 'estudiante') {
-    const { data: roleData } = await supabase
-      .from('roles')
-      .select('id')
-      .eq('name', 'postulante')
-      .single();
-    roleId = roleData?.id || null;
-  }
-
-  // Actualizar también la tabla users con el role_id correcto
-  if (roleId) {
-    await supabase
-      .from('users')
-      .update({ role_id: roleId })
-      .eq('id', data.user.id);
-  }
-
   return {
     success: true,
     redirectTo: homePathForRole(role),

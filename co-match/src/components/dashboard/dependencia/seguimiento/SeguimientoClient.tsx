@@ -90,8 +90,18 @@ export function SeguimientoClient({ user, projects, selectedProject: initialSele
   const handleUpdateMilestone = async (milestoneId: string, status: 'pending' | 'in_progress' | 'completed') => {
     setIsLoading(true);
     try {
-      // In a real implementation, this would call an API
-      // For now, we'll do optimistic update
+      // Hitos de ejemplo (sin guardar) no se pueden actualizar
+      if (milestoneId.startsWith('default-')) {
+        setToast({ message: 'Este proyecto aún no tiene hitos guardados', type: 'error' });
+        return;
+      }
+      const response = await fetch(`/api/dependencia/milestones/${milestoneId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) throw new Error('Error al actualizar hito');
+
       setSelectedProject(prev => {
         if (!prev) return prev;
         return {

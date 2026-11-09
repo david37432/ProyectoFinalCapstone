@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { sendStudentMessageAction, markStudentConversationReadAction } from './actions';
 import {
   MessageSquare,
   Send,
@@ -85,33 +86,37 @@ export default function StudentMessagesPage({ initialConversations, userId }: St
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
-          filter: `application_id=eq.${selectedConversation.applicationId}`,
+          filter: `conversation_id=eq.${selectedConversation.applicationId}`,
         },
         (payload: any) => {
           const newMessage = payload.new as any;
           if (newMessage.sender_id === userId) return; // Don't duplicate own messages
 
+          const newMsg = {
+            id: payload.new.id,
+            content: payload.new.content,
+            senderId: payload.new.sender_id,
+            isOwn: false,
+            isRead: false,
+            createdAt: payload.new.created_at,
+          };
+
           setConversations(prev => prev.map(conv => {
             if (conv.applicationId !== selectedConversation.applicationId) return conv;
-            
-            const newMsg = {
-              id: payload.new.id,
-              content: payload.new.content,
-              senderId: payload.new.sender_id,
-              isOwn: false,
-              isRead: false,
-              createdAt: payload.new.created_at,
-              sender: payload.new.sender,
-            };
-
             return {
               ...conv,
               messages: [...conv.messages, newMsg],
               lastMessage: newMsg.content,
               lastMessageTime: newMsg.createdAt,
-              unreadCount: conv.unreadCount + 1,
             };
           }));
+          // La conversación abierta también debe mostrar el mensaje nuevo
+          setSelectedConversation(prev =>
+            prev && prev.applicationId === selectedConversation.applicationId && !prev.messages.some(m => m.id === newMsg.id)
+              ? { ...prev, messages: [...prev.messages, newMsg], lastMessage: newMsg.content, lastMessageTime: newMsg.createdAt }
+              : prev
+          );
+          void markStudentConversationReadAction(selectedConversation.applicationId);
         }
       )
       .on(
@@ -120,7 +125,7 @@ export default function StudentMessagesPage({ initialConversations, userId }: St
           event: 'UPDATE',
           schema: 'public',
           table: 'messages',
-          filter: `application_id=eq.${selectedConversation.applicationId}`,
+          filter: `conversation_id=eq.${selectedConversation.applicationId}`,
         },
         (payload: any) => {
           const updatedMessage = payload.new as any;
@@ -142,7 +147,7 @@ export default function StudentMessagesPage({ initialConversations, userId }: St
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedConversation, userId]);
+  }, [selectedConversation?.applicationId, userId]);
 
   // Auto-scroll when messages change
   useEffect(() => {
@@ -174,6 +179,7 @@ export default function StudentMessagesPage({ initialConversations, userId }: St
     setSelectedConversation(conv);
     // Mark messages as read
     if (conv.unreadCount > 0) {
+      void markStudentConversationReadAction(conv.applicationId);
       setConversations(prev => prev.map(c => 
         c.applicationId === conv.applicationId ? { ...c, unreadCount: 0 } : c
       ));
@@ -189,17 +195,27 @@ export default function StudentMessagesPage({ initialConversations, userId }: St
     setNewMessage('');
 
     try {
-      const { error } = await supabase
-        .from('messages')
-        .insert({
-          application_id: selectedConversation.applicationId,
-          sender_id: userId,
-          content,
-        });
+      const result = await sendStudentMessageAction(selectedConversation.applicationId, content);
 
-      if (error) {
-        console.error('Error sending message:', error);
+      if (!result.success || !result.message) {
+        console.error('Error sending message:', result.error);
         setNewMessage(content); // Restore message on error
+      } else {
+        const sent = result.message;
+        const ownMsg = {
+          id: sent.id,
+          content: sent.content,
+          senderId: userId,
+          isOwn: true,
+          isRead: false,
+          createdAt: sent.createdAt,
+        };
+        const appendTo = (conv: Conversation) =>
+          conv.applicationId === selectedConversation.applicationId
+            ? { ...conv, messages: [...conv.messages, ownMsg], lastMessage: ownMsg.content, lastMessageTime: ownMsg.createdAt }
+            : conv;
+        setConversations(prev => prev.map(appendTo));
+        setSelectedConversation(prev => (prev ? appendTo(prev) : prev));
       }
     } catch (err) {
       console.error('Error sending message:', err);

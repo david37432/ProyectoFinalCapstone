@@ -5,17 +5,18 @@ type Result = { data: unknown; error: { message: string; code?: string } | null 
 
 let user: { id: string } | null;
 let responses: Record<string, Result>;
-let calls: { table: string; op: string; payload?: unknown; filters: [string, unknown][] }[];
+let calls: { table: string; op: string; payload?: unknown; filters: [string, string, unknown][] }[];
 
 function builder(table: string) {
-  const call = { table, op: 'select', payload: undefined as unknown, filters: [] as [string, unknown][] };
+  const call = { table, op: 'select', payload: undefined as unknown, filters: [] as [string, string, unknown][] };
   calls.push(call);
   const result = () => responses[`${table}.${call.op}`] ?? { data: null, error: null };
   const b: any = {
     select: () => b,
     insert: (p: unknown) => ((call.op = 'insert'), (call.payload = p), b),
     delete: () => ((call.op = 'delete'), b),
-    eq: (col: string, val: unknown) => (call.filters.push([col, val]), b),
+    eq: (col: string, val: unknown) => (call.filters.push(['eq', col, val]), b),
+    in: (col: string, val: unknown) => (call.filters.push(['in', col, val]), b),
     maybeSingle: () => Promise.resolve(result()),
     single: () => Promise.resolve(result()),
     then: (res: (r: Result) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve(result()).then(res, rej),
@@ -33,27 +34,19 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 
 import { applyToVacancyAction, withdrawApplicationAction } from './actions';
 
-const publishedVacancy = {
-  id: 'v1',
-  status: 'publicada',
-  modality: 'hibrido',
-  contract_type: 'pasantia',
-  pat_hours_per_week: 20,
-  vacancy_skills: [{ skill_id: 's-python', weight: 1, is_required: true, skills: { name: 'Python' } }],
+const publishedOpportunity = {
+  id: 'o1',
+  status: 'published',
+  required_skills: ['Python', 'SQL'],
+  weekly_hours: 20,
 };
 
 beforeEach(() => {
   user = { id: 'u1' };
   calls = [];
   responses = {
-    'vacancies.select': { data: publishedVacancy, error: null },
-    // Habilidades guardadas en el perfil (profiles.skills)
-    'profiles.select': { data: { skills: ['python'], availability_hours: 20 }, error: null },
-    // Preferencias opcionales (candidate_profiles)
-    'candidate_profiles.select': {
-      data: { preferred_modality: 'hibrido', preferred_contract_type: 'pasantia', candidate_skills: [] },
-      error: null,
-    },
+    'opportunities.select': { data: publishedOpportunity, error: null },
+    'profiles.select': { data: { skills: ['python', 'sql'], availability_hours: 20 }, error: null },
     'applications.insert': { data: null, error: null },
   };
 });
@@ -61,78 +54,93 @@ beforeEach(() => {
 describe('applyToVacancyAction', () => {
   it('exige sesión iniciada', async () => {
     user = null;
-    const r = await applyToVacancyAction('v1');
-    expect(r).toEqual({ success: false, error: 'Debes iniciar sesión' });
+    expect(await applyToVacancyAction('o1')).toEqual({ success: false, error: 'Debes iniciar sesión' });
   });
 
   it('rechaza un id vacío', async () => {
     expect((await applyToVacancyAction('')).success).toBe(false);
   });
 
-  it('crea la postulación con el puntaje calculado en el servidor', async () => {
-    const r = await applyToVacancyAction('v1');
+  it('crea la postulación en applications con el puntaje calculado en el servidor', async () => {
+    const r = await applyToVacancyAction('o1');
     expect(r).toEqual({ success: true, matchScore: 100 });
     const insert = calls.find((c) => c.table === 'applications' && c.op === 'insert');
-    expect(insert?.payload).toEqual({ vacancy_id: 'v1', candidate_id: 'u1', status: 'recibida', match_score: 100 });
+    expect(insert?.payload).toEqual({
+      opportunity_id: 'o1',
+      student_id: 'u1',
+      match_score: 100,
+      student_status: 'interested',
+      dependency_status: 'pending',
+      pat_status: 'pending',
+      is_match: false,
+    });
   });
 
-  it('no permite postularse a vacantes no publicadas', async () => {
-    responses['vacancies.select'] = { data: { ...publishedVacancy, status: 'borrador' }, error: null };
-    const r = await applyToVacancyAction('v1');
+  it('acepta habilidades jsonb como objetos', async () => {
+    responses['opportunities.select'] = {
+      data: { ...publishedOpportunity, required_skills: [{ name: 'Python' }, { name: 'SQL' }] },
+      error: null,
+    };
+    expect((await applyToVacancyAction('o1')).matchScore).toBe(100);
+  });
+
+  it('no permite postularse a necesidades pendientes de PAT', async () => {
+    responses['opportunities.select'] = { data: { ...publishedOpportunity, status: 'pending_pat' }, error: null };
+    const r = await applyToVacancyAction('o1');
     expect(r.success).toBe(false);
     expect(calls.some((c) => c.op === 'insert')).toBe(false);
   });
 
-  it('usa las habilidades de profiles.skills aunque no haya candidate_skills', async () => {
-    responses['candidate_profiles.select'] = { data: null, error: null };
-    responses['profiles.select'] = { data: { skills: ['PYTHON'], availability_hours: 25 }, error: null };
-    const r = await applyToVacancyAction('v1');
-    expect(r.matchScore).toBeGreaterThanOrEqual(90);
-  });
-
   it('trata una postulación duplicada como éxito', async () => {
     responses['applications.insert'] = { data: null, error: { message: 'dup', code: '23505' } };
-    expect((await applyToVacancyAction('v1')).success).toBe(true);
+    expect((await applyToVacancyAction('o1')).success).toBe(true);
   });
 
   it('devuelve el error de la base de datos', async () => {
     responses['applications.insert'] = { data: null, error: { message: 'RLS' } };
-    const r = await applyToVacancyAction('v1');
+    const r = await applyToVacancyAction('o1');
     expect(r.success).toBe(false);
     expect(r.error).toContain('RLS');
   });
 
-  it('funciona aunque el estudiante no tenga perfil de candidato', async () => {
-    responses['candidate_profiles.select'] = { data: null, error: null };
+  it('un estudiante sin habilidades obtiene puntaje bajo', async () => {
     responses['profiles.select'] = { data: { skills: [], availability_hours: null }, error: null };
-    const r = await applyToVacancyAction('v1');
+    const r = await applyToVacancyAction('o1');
     expect(r.success).toBe(true);
     expect(r.matchScore).toBeLessThan(50);
   });
 });
 
 describe('withdrawApplicationAction', () => {
-  it('elimina solo postulaciones propias en estado recibida', async () => {
-    responses['applications.delete'] = { data: [{ id: 'a1' }], error: null };
-    const r = await withdrawApplicationAction('v1');
+  it('borra la postulación propia si la dependencia no ha respondido', async () => {
+    responses['applications.select'] = { data: [{ id: 'a1', dependency_status: 'pending', is_match: false }], error: null };
+    responses['applications.delete'] = { data: null, error: null };
+    const r = await withdrawApplicationAction('o1');
     expect(r.success).toBe(true);
-    const del = calls.find((c) => c.op === 'delete');
-    expect(del?.filters).toEqual([
-      ['vacancy_id', 'v1'],
-      ['candidate_id', 'u1'],
-      ['status', 'recibida'],
+    const read = calls.find((c) => c.table === 'applications' && c.op === 'select');
+    expect(read?.filters).toEqual([
+      ['eq', 'opportunity_id', 'o1'],
+      ['eq', 'student_id', 'u1'],
     ]);
+    const del = calls.find((c) => c.op === 'delete');
+    expect(del?.filters).toEqual([['in', 'id', ['a1']]]);
   });
 
-  it('informa si la postulación ya está en revisión', async () => {
-    responses['applications.delete'] = { data: [], error: null };
-    const r = await withdrawApplicationAction('v1');
+  it('no deja retirarse si la dependencia ya contactó', async () => {
+    responses['applications.select'] = { data: [{ id: 'a1', dependency_status: 'contacted', is_match: true }], error: null };
+    const r = await withdrawApplicationAction('o1');
     expect(r.success).toBe(false);
-    expect(r.error).toMatch(/en revisión/);
+    expect(calls.some((c) => c.op === 'delete')).toBe(false);
+  });
+
+  it('si no había postulación responde éxito sin borrar nada', async () => {
+    responses['applications.select'] = { data: [], error: null };
+    expect((await withdrawApplicationAction('o1')).success).toBe(true);
+    expect(calls.some((c) => c.op === 'delete')).toBe(false);
   });
 
   it('exige sesión iniciada', async () => {
     user = null;
-    expect((await withdrawApplicationAction('v1')).success).toBe(false);
+    expect((await withdrawApplicationAction('o1')).success).toBe(false);
   });
 });

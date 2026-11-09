@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import { computeMatchScore, candidateFromProfiles, vacancySkillsFromRows } from '@/lib/matching';
+import { computeMatchScore, candidateFromProfiles, skillKey } from '@/lib/matching';
+import { opportunityPhase, parseSkillList, newApplicationRow, canWithdraw } from '@/lib/data/model';
 
 export interface ApplicationActionResult {
   success: boolean;
@@ -10,9 +11,9 @@ export interface ApplicationActionResult {
   matchScore?: number;
 }
 
-/** El estudiante se postula ("Me interesa") a una vacante publicada. */
+/** El estudiante se postula ("Me interesa") a una necesidad publicada. */
 export async function applyToVacancyAction(vacancyId: string): Promise<ApplicationActionResult> {
-  if (!vacancyId) return { success: false, error: 'Vacante inválida' };
+  if (!vacancyId) return { success: false, error: 'Necesidad inválida' };
 
   const supabase = await createClient();
   const {
@@ -20,50 +21,35 @@ export async function applyToVacancyAction(vacancyId: string): Promise<Applicati
   } = await supabase.auth.getUser();
   if (!user) return { success: false, error: 'Debes iniciar sesión' };
 
-  const { data: vacancy, error: vacancyError } = await supabase
-    .from('vacancies')
-    .select('id, status, modality, contract_type, pat_hours_per_week, vacancy_skills(skill_id, weight, is_required, skills(name))')
+  const { data: opportunity, error: oppError } = await supabase
+    .from('opportunities')
+    .select('id, status, required_skills, weekly_hours')
     .eq('id', vacancyId)
     .maybeSingle();
 
-  if (vacancyError) return { success: false, error: vacancyError.message };
-  if (!vacancy || vacancy.status !== 'publicada') {
-    return { success: false, error: 'La vacante no está disponible para postulaciones' };
+  if (oppError) return { success: false, error: oppError.message };
+  if (!opportunity || opportunityPhase(opportunity.status) !== 'published') {
+    return { success: false, error: 'La necesidad no está disponible para postulaciones' };
   }
 
-  // Habilidades y horas del perfil del estudiante (tabla profiles)
   const { data: studentProfile } = await supabase
     .from('profiles')
     .select('skills, availability_hours')
     .eq('id', user.id)
     .maybeSingle();
 
-  // Datos opcionales: nivel de dominio y preferencias (candidate_profiles)
-  const { data: candidateProfile } = await supabase
-    .from('candidate_profiles')
-    .select('availability_hours_per_week, preferred_modality, preferred_contract_type, candidate_skills(proficiency_level, skills(name))')
-    .eq('user_id', user.id)
-    .maybeSingle();
-
   const matchScore = computeMatchScore(
     {
-      skills: vacancySkillsFromRows(vacancy.vacancy_skills as any),
-      patHoursPerWeek: vacancy.pat_hours_per_week,
-      modality: vacancy.modality,
-      contractType: vacancy.contract_type,
+      skills: parseSkillList(opportunity.required_skills).map((n) => ({ skillId: skillKey(n) })),
+      patHoursPerWeek: opportunity.weekly_hours,
     },
-    candidateFromProfiles(studentProfile as any, candidateProfile as any)
+    candidateFromProfiles(studentProfile)
   );
 
-  const { error } = await supabase.from('applications').insert({
-    vacancy_id: vacancyId,
-    candidate_id: user.id,
-    status: 'recibida',
-    match_score: matchScore,
-  });
+  const { error } = await supabase.from('applications').insert(newApplicationRow(vacancyId, user.id, matchScore));
 
   if (error) {
-    // 23505 = violación de UNIQUE(vacancy_id, candidate_id): ya estaba postulado
+    // 23505 = ya existía la postulación (si hay índice único)
     if (error.code === '23505') return { success: true, matchScore };
     return { success: false, error: `No se pudo registrar la postulación: ${error.message}` };
   }
@@ -73,9 +59,9 @@ export async function applyToVacancyAction(vacancyId: string): Promise<Applicati
   return { success: true, matchScore };
 }
 
-/** El estudiante retira su postulación (solo si aún no ha sido revisada). */
+/** El estudiante retira su postulación (solo si la dependencia aún no respondió). */
 export async function withdrawApplicationAction(vacancyId: string): Promise<ApplicationActionResult> {
-  if (!vacancyId) return { success: false, error: 'Vacante inválida' };
+  if (!vacancyId) return { success: false, error: 'Necesidad inválida' };
 
   const supabase = await createClient();
   const {
@@ -83,18 +69,24 @@ export async function withdrawApplicationAction(vacancyId: string): Promise<Appl
   } = await supabase.auth.getUser();
   if (!user) return { success: false, error: 'Debes iniciar sesión' };
 
-  const { data, error } = await supabase
+  const { data: apps, error: readError } = await supabase
+    .from('applications')
+    .select('id, dependency_status, is_match')
+    .eq('opportunity_id', vacancyId)
+    .eq('student_id', user.id);
+
+  if (readError) return { success: false, error: readError.message };
+  if (!apps || apps.length === 0) return { success: true };
+  if (!apps.every(canWithdraw)) {
+    return { success: false, error: 'La dependencia ya respondió tu postulación; no se puede retirar' };
+  }
+
+  const { error } = await supabase
     .from('applications')
     .delete()
-    .eq('vacancy_id', vacancyId)
-    .eq('candidate_id', user.id)
-    .eq('status', 'recibida')
-    .select('id');
+    .in('id', apps.map((a: { id: string }) => a.id));
 
   if (error) return { success: false, error: `No se pudo retirar la postulación: ${error.message}` };
-  if (!data || data.length === 0) {
-    return { success: false, error: 'La postulación ya está en revisión y no se puede retirar' };
-  }
 
   revalidatePath('/dashboard/estudiante/explorar');
   revalidatePath('/dashboard/estudiante/mis-apps');

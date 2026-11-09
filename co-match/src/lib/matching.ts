@@ -1,4 +1,5 @@
 import { PAT_MAX_HOURS } from './profile';
+import { parseSkillList } from './data/model';
 
 /**
  * Algoritmo de matching de Co-Match.
@@ -262,7 +263,8 @@ export function vacancySkillsFromRows(rows: VacancySkillRow[] | null | undefined
 }
 
 export interface StudentProfileRow {
-  skills?: string[] | null;
+  /** jsonb: ["Python", ...] o [{ name: "Python" }, ...] */
+  skills?: unknown;
   availability_hours?: number | null;
 }
 
@@ -287,7 +289,7 @@ export function candidateFromProfiles(
     const key = skillKey(firstOf(cs.skills)?.name);
     if (key) skills.set(key, { skillId: key, proficiency: cs.proficiency_level });
   }
-  for (const name of profile?.skills ?? []) {
+  for (const name of parseSkillList(profile?.skills)) {
     const key = skillKey(name);
     if (key && !skills.has(key)) skills.set(key, { skillId: key, proficiency: null });
   }

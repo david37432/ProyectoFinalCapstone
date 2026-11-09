@@ -1,25 +1,16 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/**
+ * Consultas del lado del ESTUDIANTE sobre el esquema real de Supabase
+ * (opportunities, applications, profiles).
+ */
 import { createClient } from './server'
-import { computeMatchScore, firstOf, candidateFromProfiles, vacancySkillsFromRows } from '@/lib/matching'
-
-interface VacancyData {
-  id: string
-  title: string
-  department_id: string
-  pat_hours_per_week: number
-  contract_type: string
-  modality: string
-}
-
-interface ApplicationWithVacancy {
-  id: string
-  vacancy_id: string
-  status: string
-  match_score: number
-  applied_at: string
-  updated_at: string
-  reviewed_at: string | null
-  vacancies: VacancyData[] | null
-}
+import { computeMatchScore, candidateFromProfiles, skillKey } from '@/lib/matching'
+import {
+  PUBLISHED_STATUS_VALUES,
+  parseSkillList,
+  studentApplicationStatus,
+  isConfirmedMatch,
+} from '@/lib/data/model'
 
 export interface StudentVacancy {
   id: string
@@ -71,6 +62,21 @@ export interface StudentApplication {
   department_id: string
 }
 
+type Client = Awaited<ReturnType<typeof createClient>>
+
+/** Número de postulaciones por necesidad (función SQL; RLS no deja contar las de otros). */
+async function applicationCounts(supabase: Client, opportunityIds: string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>()
+  if (opportunityIds.length === 0) return counts
+  const { data, error } = await supabase.rpc('cm_application_counts', { opportunity_ids: opportunityIds })
+  if (error) {
+    console.warn('[student-queries] cm_application_counts:', error.message)
+    return counts
+  }
+  for (const row of (data ?? []) as any[]) counts.set(row.opportunity_id, Number(row.total) || 0)
+  return counts
+}
+
 export async function getStudentVacancies(userId: string): Promise<StudentVacancy[]> {
   const supabase = await createClient()
 
@@ -79,211 +85,84 @@ export async function getStudentVacancies(userId: string): Promise<StudentVacanc
     .select('skills, availability_hours')
     .eq('id', userId)
     .maybeSingle()
+  const candidate = candidateFromProfiles(studentProfile)
 
-  const { data: candidateProfile } = await supabase
-    .from('candidate_profiles')
-    .select('availability_hours_per_week, preferred_modality, preferred_contract_type, candidate_skills(proficiency_level, skills(name))')
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  const candidate = candidateFromProfiles(studentProfile as any, candidateProfile as any)
-
-  const { data: vacancies } = await supabase
-    .from('vacancies')
-    .select(`
-      id,
-      title,
-      description,
-      department_id,
-      publication_date,
-      contract_type,
-      modality,
-      pat_hours_per_week,
-      status,
-      vacancy_skills(skill_id, weight, is_required, skills(name))
-    `)
-    .eq('status', 'publicada')
-    .order('publication_date', { ascending: false })
-
-  if (!vacancies) return []
-
-  const { data: departments } = await supabase
-    .from('departments')
-    .select('id, name')
-    .in('id', [...new Set(vacancies.map((v: any) => v.department_id))])
-
-  const departmentMap = new Map<string, string>(departments?.map((d: any) => [d.id, d.name]) || [])
-
-  const vacancyIds = vacancies.map((v: any) => v.id)
-  const { data: applications } = await supabase
-    .from('applications')
-    .select('vacancy_id, candidate_id')
-    .in('vacancy_id', vacancyIds)
-
-  const applicationsByVacancy = new Map<string, number>()
-  applications?.forEach((app: any) => {
-    applicationsByVacancy.set(app.vacancy_id, (applicationsByVacancy.get(app.vacancy_id) || 0) + 1)
-  })
+  const { data: opportunities, error } = await supabase
+    .from('opportunities')
+    .select('*')
+    .in('status', PUBLISHED_STATUS_VALUES)
+    .order('created_at', { ascending: false })
+  if (error) console.error('[student-queries] opportunities:', error.message)
+  const opps = (opportunities ?? []) as any[]
+  if (opps.length === 0) return []
 
   const { data: myApplications } = await supabase
     .from('applications')
-    .select('vacancy_id')
-    .eq('candidate_id', userId)
+    .select('opportunity_id')
+    .eq('student_id', userId)
+  const applied = new Set((myApplications ?? []).map((a: any) => a.opportunity_id))
+  const counts = await applicationCounts(supabase, opps.map((o) => o.id))
 
-  const appliedVacancyIds = new Set(myApplications?.map((a: any) => a.vacancy_id) || [])
-
-  return vacancies.map((vacancy: any) => {
-    const vacancySkills = vacancy.vacancy_skills ?? []
-    const skills = vacancySkills
-      .map((vs: any) => firstOf<{ name: string }>(vs.skills)?.name)
-      .filter(Boolean) as string[]
-
-    const matchScore = computeMatchScore(
-      {
-        skills: vacancySkillsFromRows(vacancySkills),
-        patHoursPerWeek: vacancy.pat_hours_per_week,
-        modality: vacancy.modality,
-        contractType: vacancy.contract_type,
-      },
-      candidate
-    )
-
-    return {
-      id: vacancy.id,
-      title: vacancy.title,
-      department: departmentMap.get(vacancy.department_id) || vacancy.department_id,
-      department_id: vacancy.department_id,
-      modality: vacancy.modality,
-      contract_type: vacancy.contract_type,
-      pat_hours_per_week: vacancy.pat_hours_per_week,
-      location: departmentMap.get(vacancy.department_id) || '',
-      match_score: Math.min(100, matchScore),
-      required_skills: skills,
-      description: vacancy.description,
-      status: vacancy.status,
-      publication_date: vacancy.publication_date,
-      candidates_count: applicationsByVacancy.get(vacancy.id) || 0,
-      is_applied: appliedVacancyIds.has(vacancy.id),
-    }
-  }).sort((a: any, b: any) => b.match_score - a.match_score)
-}
-
-export async function getStudentProfile(userId: string): Promise<StudentProfile | null> {
-  const supabase = await createClient()
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, email, full_name, role, phone, student_code, career, semester, focus, gpa, availability_hours')
-    .eq('id', userId)
-    .single()
-
-  if (!profile) return null
-
-  const { data: candidateProfile } = await supabase
-    .from('candidate_profiles')
-    .select('id, professional_summary, availability_hours_per_week, education_level')
-    .eq('user_id', userId)
-    .single()
-
-  const { data: candidateSkills } = await supabase
-    .from('candidate_skills')
-    .select('skill_id, proficiency_level, skills(name)')
-    .eq('candidate_profile_id', candidateProfile?.id)
-
-  const { data: workExperience } = await supabase
-    .from('work_experience')
-    .select('description')
-    .eq('candidate_profile_id', candidateProfile?.id)
-    .order('start_date', { ascending: false })
-    .limit(3)
-
-  const skills = candidateSkills?.map((cs: any) => cs.skills?.[0]?.name).filter(Boolean) || []
-  const experience = workExperience?.map((w: any) => w.description).filter(Boolean).join('\n\n') || ''
-
-  const fields = [
-    profile.full_name, profile.email, profile.phone, profile.student_code,
-    profile.career, profile.semester, profile.focus, profile.gpa,
-    skills.length > 0, experience, profile.availability_hours
-  ]
-  const filled = fields.filter(Boolean).length
-  const completion = Math.round((filled / fields.length) * 100)
-
-  return {
-    id: profile.id,
-    email: profile.email,
-    full_name: profile.full_name,
-    role: profile.role,
-    phone: profile.phone,
-    student_code: profile.student_code,
-    career: profile.career,
-    semester: profile.semester,
-    focus: profile.focus,
-    gpa: profile.gpa,
-    availability_hours: profile.availability_hours || candidateProfile?.availability_hours_per_week,
-    skills,
-    interests: [],
-    experience,
-    completion,
-  }
+  return opps
+    .map((o) => {
+      const skills = parseSkillList(o.required_skills)
+      const matchScore = computeMatchScore(
+        { skills: skills.map((n) => ({ skillId: skillKey(n) })), patHoursPerWeek: o.weekly_hours },
+        candidate
+      )
+      return {
+        id: o.id,
+        title: o.title,
+        department: o.area || 'Sin área',
+        department_id: o.area || '',
+        modality: 'hibrido',
+        contract_type: 'pasantia',
+        pat_hours_per_week: o.weekly_hours ?? 0,
+        location: o.area || '',
+        match_score: matchScore,
+        required_skills: skills,
+        description: o.description || '',
+        status: o.status,
+        publication_date: o.start_date || o.created_at,
+        candidates_count: counts.get(o.id) ?? (applied.has(o.id) ? 1 : 0),
+        is_applied: applied.has(o.id),
+      }
+    })
+    .sort((a, b) => b.match_score - a.match_score)
 }
 
 export async function getStudentApplications(userId: string): Promise<StudentApplication[]> {
   const supabase = await createClient()
 
-  const { data: applications } = await supabase
+  const { data: applications, error } = await supabase
     .from('applications')
-    .select(`
-      id,
-      vacancy_id,
-      status,
-      match_score,
-      applied_at,
-      updated_at,
-      reviewed_at,
-      vacancies (
-        id,
-        title,
-        department_id,
-        pat_hours_per_week,
-        contract_type,
-        modality
-      )
-    `)
-    .eq('candidate_id', userId)
-    .order('applied_at', { ascending: false })
+    .select('*')
+    .eq('student_id', userId)
+    .order('created_at', { ascending: false })
+  if (error) console.error('[student-queries] applications:', error.message)
+  const apps = (applications ?? []) as any[]
+  if (apps.length === 0) return []
 
-  if (!applications) return []
+  const { data: opportunities } = await supabase
+    .from('opportunities')
+    .select('*')
+    .in('id', [...new Set(apps.map((a) => a.opportunity_id))])
+  const oppById = new Map((opportunities ?? []).map((o: any) => [o.id, o]))
 
-  const typedApplications = applications as ApplicationWithVacancy[]
-
-  const vacancyIds = typedApplications
-    .map((a: any) => a.vacancies?.[0]?.id)
-    .filter((id): id is string => Boolean(id))
-
-  const { data: departments } = await supabase
-    .from('departments')
-    .select('id, name')
-    .in('id', [...new Set(vacancyIds.map((v: string) => {
-      const app = typedApplications.find((a: any) => a.vacancies?.[0]?.id === v)
-      return app?.vacancies?.[0]?.department_id
-    }).filter(Boolean))])
-
-  const departmentMap = new Map<string, string>(departments?.map((d: any) => [d.id, d.name]) || [])
-
-  return typedApplications.map((app: any) => {
-    const vacancy = app.vacancies?.[0]
+  return apps.map((a) => {
+    const o: any = oppById.get(a.opportunity_id)
     return {
-      id: app.id,
-      vacancy_id: app.vacancy_id,
-      title: vacancy?.title || 'Proyecto sin título',
-      department: vacancy?.department_id ? (departmentMap.get(vacancy.department_id) ?? 'Sin asignar') : 'Sin asignar',
-      department_id: vacancy?.department_id || '',
-      status: app.status,
-      applied_at: app.applied_at,
-      match_score: app.match_score,
-      pat_hours_per_week: vacancy?.pat_hours_per_week || 0,
-      interview_date: app.reviewed_at || undefined,
-      start_date: app.updated_at,
+      id: a.id,
+      vacancy_id: a.opportunity_id,
+      title: o?.title || 'Proyecto sin título',
+      department: o?.area || 'Sin asignar',
+      department_id: o?.area || '',
+      status: studentApplicationStatus(a),
+      applied_at: a.created_at,
+      match_score: Math.round(Number(a.match_score) || 0),
+      pat_hours_per_week: o?.weekly_hours || 0,
+      interview_date: undefined,
+      start_date: isConfirmedMatch(a) ? o?.start_date || undefined : undefined,
     }
   })
 }

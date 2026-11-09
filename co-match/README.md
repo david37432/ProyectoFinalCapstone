@@ -22,10 +22,22 @@ npm run dev                  # http://localhost:3000
 
 ### Base de datos
 
-En el panel de Supabase → **SQL Editor**, ejecuta en orden los archivos de `supabase/migrations/`.
-La última migración (`20261108000000_core_publish_apply_matching.sql`) carga el catálogo de
-departamentos y habilidades y agrega los permisos necesarios para publicar vacantes, postularse,
-calcular el matching y enviar reportes de errores.
+La base de Supabase usa las tablas `profiles`, `opportunities`, `applications`,
+`conversations`, `messages` y `project_milestones`.
+
+En el panel de Supabase → **SQL Editor**, ejecuta el contenido de
+`supabase/migrations/20261108200000_coherencia_esquema_real.sql`. Agrega las
+políticas de seguridad (RLS), el máximo PAT de 25 horas, el bucket de fotos de
+perfil y la tabla de reportes, sin crear tablas duplicadas ni borrar datos.
+
+Los scripts de `supabase/legacy/` son de un esquema antiguo y **no se deben ejecutar**.
+
+#### Ciclo de una necesidad
+
+1. La dependencia publica → `opportunities.status = 'pending_pat'` (Pendiente revisión PAT).
+2. PAT la aprueba → `status = 'published'` (por ahora desde el SQL Editor).
+3. El estudiante marca "Me interesa" → fila en `applications` (`dependency_status = 'pending'`).
+4. La dependencia lo contacta → `is_match = true`, conversación y hitos del proyecto; la necesidad pasa a `in_progress`.
 
 ## Scripts
 

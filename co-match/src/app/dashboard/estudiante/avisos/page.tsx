@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { PUBLISHED_STATUS_VALUES } from '@/lib/data/model';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import AvisosClient from './AvisosClient';
@@ -12,37 +14,28 @@ export default async function AvisosPage() {
   }
 
   // Obtener notificaciones del usuario + globales
-  const { data: notifications, error } = await supabase
-    .from('notifications')
-    .select('*')
-    .or(`user_id.eq.${user.id},is_global.eq.true`)
+  // La tabla `notifications` no existe en la BD actual: solo avisos automáticos
+  const notifications: any[] = [];
+
+  // Avisos automáticos: necesidades publicadas en los últimos 7 días
+  const { data: recentOpportunities } = await supabase
+    .from('opportunities')
+    .select('id, title, area, created_at')
+    .in('status', PUBLISHED_STATUS_VALUES)
+    .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
     .order('created_at', { ascending: false })
-    .limit(50);
-
-  if (error) {
-    console.error('Error fetching notifications:', error);
-  }
-
-  // Generar avisos automáticos de oportunidades recientes (últimos 7 días)
-  const { data: recentVacancies } = await supabase
-    .from('vacancies')
-    .select('id, title, department_id, departments(name)')
-    .eq('status', 'publicada')
-    .gte('publication_date', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-    .order('publication_date', { ascending: false })
     .limit(5);
 
-  // Convertir vacantes recientes a notificaciones virtuales de oportunidad
-  const opportunityNotifications = (recentVacancies || []).map((vacancy: any) => ({
-    id: `opportunity-${vacancy.id}`,
+  const opportunityNotifications = (recentOpportunities || []).map((o: any) => ({
+    id: `opportunity-${o.id}`,
     type: 'opportunity' as const,
     title: '¡Nueva oportunidad publicada!',
-    message: `La dependencia ${vacancy.departments?.[0]?.name || 'desconocida'} publicó una ficha: "${vacancy.title}".`,
+    message: `${o.area || 'Una dependencia'} publicó la necesidad: "${o.title}".`,
     link_url: `/dashboard/estudiante/explorar`,
     is_read: false,
-    created_at: vacancy.id, // usar ID como timestamp virtual para ordenamiento
+    created_at: o.created_at,
     is_virtual: true,
-    vacancy_id: vacancy.id,
+    vacancy_id: o.id,
   }));
 
   // Generar tips de perfil si está incompleto

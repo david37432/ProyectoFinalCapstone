@@ -39,8 +39,10 @@ Marca como leídos los mensajes de la conversación. **200** → `{ "success": t
 Registra el contacto con el candidato de la conversación.
 
 ### `POST /api/dependencia/applications/{id}/contact`
-Inicia contacto con el candidato de una postulación y crea (u obtiene) la conversación.
-**403** si la vacante de la postulación no fue creada por el usuario. **404** si no existe.
+La dependencia contacta al candidato: la postulación queda como match (`dependency_status = 'contacted'`,
+`is_match = true`), la necesidad pasa a `in_progress`, se crean los hitos iniciales del proyecto y la conversación.
+**200** → `{ "success": true, "conversationId": "..." }`.
+**403** si la necesidad no es de la dependencia. **404** si la postulación no existe.
 
 ### `GET /api/dependencia/projects`
 Proyectos en seguimiento (postulaciones aceptadas) con hitos, horas y evaluación.
@@ -60,9 +62,10 @@ Se invocan desde componentes de React; no son URLs públicas.
 
 | Acción | Archivo | Entrada | Salida |
 |---|---|---|---|
-| `publishVacancyAction` | `app/dashboard/dependencia/publicar/actions.ts` | `{ title, department, description, skills[], weeklyHours, durationMonths }` | `{ success, vacancyId, candidates[{ userId, fullName, score, matchedSkills }] }` |
+| `publishVacancyAction` | `app/dashboard/dependencia/publicar/actions.ts` | `{ title, department, description, skills[], weeklyHours (≤ 25), durationMonths } → fila en `opportunities`` | `{ success, vacancyId, candidates[{ userId, fullName, score, matchedSkills }] }` |
 | `applyToVacancyAction` | `app/dashboard/estudiante/explorar/actions.ts` | `vacancyId` | `{ success, matchScore }` |
-| `withdrawApplicationAction` | `app/dashboard/estudiante/explorar/actions.ts` | `vacancyId` | `{ success }` (solo si la postulación sigue en `recibida`) |
+| `withdrawApplicationAction` | `app/dashboard/estudiante/explorar/actions.ts` | `vacancyId` (id de `opportunities`) | `{ success }` (solo si la dependencia no ha respondido) |
+| `sendStudentMessageAction` | `app/dashboard/estudiante/mensajes/actions.ts` | `conversationId, content` | `{ success, message }` |
 | `submitFeedbackAction` | `app/reportar/actions.ts` | `{ category: error\|sugerencia\|otro, message, pageUrl? }` | `{ success }` |
 | `registerAction` | `app/auth/register/actions.ts` | `{ email, password, full_name, role: postulante\|reclutador }` | `{ success, redirectTo }` |
 
