@@ -55,6 +55,33 @@ test.describe('Registro (sin crear cuentas reales)', () => {
     await expect(alerta(page)).toContainText('no coinciden');
   });
 
+  test('exige autorizar el tratamiento de datos antes de crear la cuenta', async ({ page }) => {
+    await page.goto('/auth/register');
+    await page.locator('#email').fill('prueba@unisabana.edu.co');
+    await page.locator('#password').fill('contraseña-segura');
+    await page.locator('#confirmPassword').fill('contraseña-segura');
+    await page.getByRole('button', { name: 'Siguiente' }).click();
+    await page.locator('#full_name').fill('Persona de Prueba');
+    await page.locator('#document_number').fill('123456');
+    await expect(page.locator('#accepted_privacy')).not.toBeChecked();
+    await page.getByRole('button', { name: 'Crear cuenta' }).click();
+    await expect(alerta(page)).toContainText('autorizar el tratamiento');
+  });
+
+  test('el enlace de la política de privacidad abre la página', async ({ page, context }) => {
+    await page.goto('/auth/register');
+    await page.locator('#email').fill('prueba@unisabana.edu.co');
+    await page.locator('#password').fill('contraseña-segura');
+    await page.locator('#confirmPassword').fill('contraseña-segura');
+    await page.getByRole('button', { name: 'Siguiente' }).click();
+    const [popup] = await Promise.all([
+      context.waitForEvent('page'),
+      page.getByRole('link', { name: 'Política de Privacidad' }).click(),
+    ]);
+    await popup.waitForLoadState();
+    await expect(popup).toHaveURL(/\/privacidad/);
+  });
+
   test('el spinner no queda pegado si falla el servidor', async ({ page }) => {
     // Simula una caída de red en la Server Action: antes dejaba el botón cargando para siempre
     await page.route('**/auth/register', (route) =>
@@ -67,6 +94,7 @@ test.describe('Registro (sin crear cuentas reales)', () => {
     await page.getByRole('button', { name: 'Siguiente' }).click();
     await page.locator('#full_name').fill('Persona de Prueba');
     await page.locator('#document_number').fill('123456');
+    await page.locator('#accepted_privacy').check();
     await page.getByRole('button', { name: 'Crear cuenta' }).click();
     await expect(alerta(page)).toContainText(/No se pudo completar/);
     await expect(page.getByRole('button', { name: 'Crear cuenta' })).toBeEnabled();

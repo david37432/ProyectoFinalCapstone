@@ -24,7 +24,7 @@ const maxErrorRate = Number(process.env.MAX_ERROR_RATE ?? 0.01);
 const maxP95 = Number(process.env.MAX_P95_MS ?? 1500);
 
 // Rutas públicas; las del dashboard redirigen al login (también cuenta como respuesta válida)
-const paths = ['/', '/auth/login', '/auth/register', '/privacidad', '/terminos', '/reportar', '/dashboard/estudiante/explorar'];
+const paths = ['/', '/auth/login', '/auth/register', '/privacidad', '/terminos', '/reportar', '/dashboard/estudiante/explorar', '/dashboard/dependencia', '/api/dependencia/notifications'];
 
 const latencies = [];
 let errors = 0;
