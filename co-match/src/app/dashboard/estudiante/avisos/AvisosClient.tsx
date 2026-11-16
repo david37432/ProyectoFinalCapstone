@@ -59,6 +59,7 @@ export default function AvisosClient({ initialNotifications, userId }: AvisosCli
   const [isPending, startTransition] = useTransition();
   const supabase = createClient();
 
+  const [showAll, setShowAll] = useState(false);
   const filteredNotifications = notifications.filter(n => {
     if (activeFilter === 'unread') return !n.is_read;
     if (activeFilter !== 'all') return n.type === activeFilter;
@@ -235,7 +236,7 @@ export default function AvisosClient({ initialNotifications, userId }: AvisosCli
           </div>
         ) : (
           <>
-            {filteredNotifications.map((notification) => {
+            {(showAll ? filteredNotifications : filteredNotifications.slice(0, 6)).map((notification) => {
               const config = getTypeConfig(notification.type);
               const Icon = config.icon;
               return (
@@ -291,8 +292,11 @@ export default function AvisosClient({ initialNotifications, userId }: AvisosCli
 
             {filteredNotifications.length > 6 && (
               <div className="text-center pt-4">
-                <button className="px-6 py-3 text-base font-medium text-neutral-700 bg-white border border-neutral-300 rounded-lg hover:bg-neutral-50 transition-colors">
-                  Ver todas las notificaciones
+                <button
+                  type="button"
+                  onClick={() => setShowAll((v) => !v)}
+                  className="px-6 py-3 text-base font-medium text-neutral-700 bg-white border border-neutral-300 rounded-lg hover:bg-neutral-50 transition-colors">
+                  {showAll ? 'Ver menos' : `Ver todas las notificaciones (${filteredNotifications.length})`}
                 </button>
               </div>
             )}

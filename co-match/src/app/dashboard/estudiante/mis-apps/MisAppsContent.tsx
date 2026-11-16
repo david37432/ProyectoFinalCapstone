@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { withdrawApplicationAction } from '@/app/dashboard/estudiante/explorar/actions';
 import { Briefcase, Clock, CheckCircle, XCircle, MessageSquare, ExternalLink, Loader2 } from 'lucide-react';
 
 interface Application {
@@ -42,6 +43,28 @@ const statusLabels: Record<string, string> = {
 export default function MisAppsContent({ initialApplications }: MisAppsContentProps) {
   const [applications, setApplications] = useState<Application[]>(initialApplications);
   const [loading, setLoading] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleWithdraw = async (app: Application) => {
+    setWithdrawingId(app.id);
+    setError(null);
+    try {
+      const result = await withdrawApplicationAction(app.vacancy_id);
+      if (!result.success) {
+        setError(result.error ?? 'No se pudo retirar la postulación');
+        return;
+      }
+      setApplications((prev) => prev.filter((a) => a.id !== app.id));
+    } catch {
+      setError('No se pudo retirar la postulación');
+    } finally {
+      setWithdrawingId(null);
+      setConfirmId(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -126,13 +149,59 @@ export default function MisAppsContent({ initialApplications }: MisAppsContentPr
             </div>
 
             <div className="flex gap-2 pt-2">
-              <button className="flex-1 py-2 px-4 text-sm font-medium text-primary bg-primary/10 rounded-lg hover:bg-primary/20 transition-colors">
-                Ver detalles
+              <button
+                type="button"
+                onClick={() => setExpandedId(expandedId === app.id ? null : app.id)}
+                aria-expanded={expandedId === app.id}
+                className="flex-1 py-2 px-4 text-sm font-medium text-primary bg-primary/10 rounded-lg hover:bg-primary/20 transition-colors"
+              >
+                {expandedId === app.id ? 'Ocultar detalles' : 'Ver detalles'}
               </button>
-              <button className="flex-1 py-2 px-4 text-sm font-medium text-neutral-700 border border-neutral-300 rounded-lg hover:bg-neutral-50 transition-colors">
-                Retirar
-              </button>
+              {app.status === 'recibida' || app.status === 'en_revision' ? (
+                confirmId === app.id ? (
+                  <button
+                    type="button"
+                    onClick={() => handleWithdraw(app)}
+                    disabled={withdrawingId === app.id}
+                    className="flex-1 py-2 px-4 text-sm font-medium text-white bg-danger rounded-lg hover:bg-red-700 disabled:opacity-60 transition-colors"
+                  >
+                    {withdrawingId === app.id ? 'Retirando…' : 'Confirmar retiro'}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmId(app.id)}
+                    className="flex-1 py-2 px-4 text-sm font-medium text-neutral-700 border border-neutral-300 rounded-lg hover:bg-neutral-50 transition-colors"
+                  >
+                    Retirar
+                  </button>
+                )
+              ) : (
+                <a
+                  href={app.status === 'rechazada' ? '/dashboard/estudiante/explorar' : '/dashboard/estudiante/mensajes'}
+                  className="flex-1 py-2 px-4 text-sm text-center font-medium text-neutral-700 border border-neutral-300 rounded-lg hover:bg-neutral-50 transition-colors"
+                >
+                  {app.status === 'rechazada' ? 'Buscar otras' : 'Ir al chat'}
+                </a>
+              )}
             </div>
+            {expandedId === app.id && (
+              <p className="text-sm text-neutral-600 bg-neutral-50 rounded-lg p-3">
+                {{
+                  recibida: 'La dependencia aún no ha respondido. Puedes retirar tu postulación mientras siga en este estado.',
+                  en_revision: 'La dependencia está revisando tu perfil. Puedes retirar tu postulación mientras siga en este estado.',
+                  entrevista: 'La dependencia te contactó. Revisa el chat para coordinar los siguientes pasos.',
+                  prueba: 'La dependencia te contactó para una prueba. Revisa el chat para coordinar.',
+                  aceptada: 'Fuiste aceptado/a en este proyecto. Coordina el inicio con la dependencia por el chat.',
+                  rechazada: 'La dependencia decidió no continuar con tu postulación en este proyecto.',
+                }[app.status] ?? 'Estado de tu postulación.'}
+              </p>
+            )}
+            {confirmId === app.id && withdrawingId !== app.id && (
+              <button type="button" onClick={() => setConfirmId(null)} className="text-xs text-neutral-500 underline">
+                Cancelar
+              </button>
+            )}
           </article>
         );
       })}
@@ -143,6 +212,7 @@ export default function MisAppsContent({ initialApplications }: MisAppsContentPr
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-neutral-900">Mis Aplicaciones</h1>
+        {error && <p role="alert" className="mt-2 text-sm text-danger">{error}</p>}
         <p className="text-neutral-600">Gestiona y da seguimiento a tus postulaciones activas</p>
       </div>
 

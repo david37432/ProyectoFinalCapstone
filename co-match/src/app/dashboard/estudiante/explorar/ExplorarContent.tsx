@@ -46,6 +46,7 @@ export default function ExplorarContent({ initialVacancies, userId }: ExplorarCo
   const [actionError, setActionError] = useState<string | null>(null);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(10);
 
   const filteredVacancies = vacancies
     .filter(v => !dismissedIds.has(v.id))
@@ -242,7 +243,7 @@ export default function ExplorarContent({ initialVacancies, userId }: ExplorarCo
             )}
           </div>
         ) : (
-          filteredVacancies.map((vacancy) => (
+          filteredVacancies.slice(0, visibleCount).map((vacancy) => (
             <article
               key={vacancy.id}
               className="bg-white rounded-xl border border-neutral-200 overflow-hidden hover:shadow-lg transition-shadow"
@@ -345,10 +346,13 @@ export default function ExplorarContent({ initialVacancies, userId }: ExplorarCo
         )}
       </div>
 
-      {filteredVacancies.length > 0 && (
+      {filteredVacancies.length > visibleCount && (
         <div className="text-center pt-4">
-          <button className="px-6 py-3 text-base font-medium text-neutral-700 bg-white border border-neutral-300 rounded-lg hover:bg-neutral-50 transition-colors">
-            Cargar más oportunidades
+          <button
+            type="button"
+            onClick={() => setVisibleCount((c) => c + 10)}
+            className="px-6 py-3 text-base font-medium text-neutral-700 bg-white border border-neutral-300 rounded-lg hover:bg-neutral-50 transition-colors">
+            Cargar más oportunidades ({filteredVacancies.length - visibleCount} restantes)
           </button>
         </div>
       )}

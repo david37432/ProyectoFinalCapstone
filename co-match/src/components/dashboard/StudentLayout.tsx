@@ -184,10 +184,13 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
         <header className="sticky top-0 z-30 bg-white border-b border-neutral-200">
           <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
             <h1 className="text-2xl font-bold text-neutral-900">Oportunidades</h1>
-            <button className="p-2 rounded-lg text-neutral-600 hover:bg-neutral-100 relative">
+            <Link
+              href="/dashboard/estudiante/avisos"
+              className="p-2 rounded-lg text-neutral-600 hover:bg-neutral-100 relative"
+              aria-label="Ver avisos"
+            >
               <Bell className="w-5 h-5" />
-              <span className="absolute top-1 right-1 w-3 h-3 bg-danger rounded-full" />
-            </button>
+            </Link>
           </div>
         </header>
         <div className="max-w-7xl mx-auto px-6 py-6">
