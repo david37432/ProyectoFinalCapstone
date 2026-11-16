@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, MessageCircle, Send } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
-import { cn } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/client';
+import { uploadChatFile } from '@/lib/chat-upload';
 import { ConversationList } from './ConversationList';
 import { ChatArea } from './ChatArea';
 import { StudentProfileModal } from './StudentProfileModal';
@@ -25,45 +26,34 @@ interface MessagesClientProps {
   initialSelectedConversationId: string | null;
 }
 
-export function MessagesClient({ 
-  user, 
-  initialConversations, 
-  initialMessages, 
-  initialSelectedConversationId 
+export function MessagesClient({
+  user,
+  initialConversations,
+  initialMessages,
+  initialSelectedConversationId
 }: MessagesClientProps) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  
+
   const [conversations, setConversations] = useState<ConversationWithDetails[]>(initialConversations);
   const [messages, setMessages] = useState<MessageWithSender[]>(initialMessages);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(initialSelectedConversationId);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<ConversationWithDetails | null>(null);
   const [isSending, setIsSending] = useState(false);
-  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const loadedConversationRef = useRef<string | null>(initialMessages.length > 0 ? initialSelectedConversationId : null);
+  const selectedIdRef = useRef<string | null>(initialSelectedConversationId);
+  const conversationsRef = useRef(conversations);
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  });
 
-  // Get selected conversation
-  const selectedConversation = useMemo(() => 
+  const selectedConversation = useMemo(() =>
     conversations.find(c => c.id === selectedConversationId) || null,
     [conversations, selectedConversationId]
   );
 
-  // Load conversations on mount
-  useEffect(() => {
-    loadConversations();
-  }, []);
-
-  // Load messages when conversation changes
-  useEffect(() => {
-    if (selectedConversationId) {
-      loadMessages(selectedConversationId);
-    } else {
-      setMessages([]);
-    }
-  }, [selectedConversationId]);
-
-  const loadConversations = async () => {
+  const loadConversations = useCallback(async () => {
     try {
       const response = await fetch('/api/dependencia/conversations');
       if (response.ok) {
@@ -73,82 +63,148 @@ export function MessagesClient({
     } catch (error) {
       console.error('Error loading conversations:', error);
     }
-  };
+  }, []);
 
-  const loadMessages = async (conversationId: string) => {
-    setIsLoadingMessages(true);
+  const loadMessages = useCallback(async (conversationId: string) => {
     try {
       const response = await fetch(`/api/dependencia/conversations/${conversationId}/messages`);
       if (response.ok) {
         const data = await response.json();
-        setMessages(data.messages);
+        // Ignorar respuestas de una conversación que ya no está abierta
+        if (selectedIdRef.current === conversationId) setMessages(data.messages);
       }
     } catch (error) {
       console.error('Error loading messages:', error);
-    } finally {
-      setIsLoadingMessages(false);
     }
-  };
+  }, []);
+
+  // Cargar los mensajes al cambiar de conversación (la primera ya llega desde el servidor)
+  useEffect(() => {
+    selectedIdRef.current = selectedConversationId;
+    if (!selectedConversationId) {
+      setMessages([]);
+      return;
+    }
+    if (loadedConversationRef.current === selectedConversationId) return;
+    loadedConversationRef.current = selectedConversationId;
+    loadMessages(selectedConversationId);
+  }, [selectedConversationId, loadMessages]);
+
+  // Tiempo real (WebSocket de Supabase): mensajes nuevos y confirmaciones de lectura.
+  // RLS hace que solo lleguen eventos de las conversaciones del usuario.
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`dep-messages:${user.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload: any) => {
+        const m = payload.new;
+        if (!m || m.sender_id === user.id) return; // los propios ya se agregaron al enviarlos
+        const conv = conversationsRef.current.find(c => c.id === m.conversation_id);
+        if (!conv) {
+          loadConversations(); // conversación nueva
+          return;
+        }
+        const preview = m.message_type === 'file' ? `📎 ${m.file_name ?? 'Archivo'}` : String(m.content ?? '');
+        const isOpen = selectedIdRef.current === m.conversation_id;
+        setConversations(prev => prev.map(c => c.id === m.conversation_id
+          ? { ...c, last_message: preview.slice(0, 500), last_message_at: m.created_at, last_message_by: m.sender_id,
+              unread_dependency_count: isOpen ? 0 : c.unread_dependency_count + 1 }
+          : c));
+        if (isOpen) {
+          setMessages(prev => prev.some(x => x.id === m.id) ? prev : [...prev, {
+            id: m.id,
+            conversation_id: m.conversation_id,
+            sender_id: m.sender_id,
+            sender_name: conv.candidate_name,
+            sender_avatar: conv.candidate_avatar_url,
+            content: m.content,
+            message_type: m.message_type === 'file' && m.file_url ? 'file' : 'text',
+            file_url: m.file_url ?? null,
+            file_name: m.file_name ?? null,
+            is_read: true,
+            created_at: m.created_at,
+            is_own: false,
+          }]);
+          void fetch(`/api/dependencia/conversations/${m.conversation_id}/read`, { method: 'POST' });
+        }
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload: any) => {
+        const m = payload.new;
+        if (m?.is_read && selectedIdRef.current === m.conversation_id) {
+          setMessages(prev => prev.map(x => (x.id === m.id ? { ...x, is_read: true } : x)));
+        }
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user.id, loadConversations]);
 
   const handleSelectConversation = (conversationId: string) => {
     setSelectedConversationId(conversationId);
     setSearchQuery('');
   };
 
-  const handleSendMessage = async (content: string) => {
+  const appendOwnMessage = (message: MessageWithSender, preview: string) => {
+    setMessages(prev => (prev.some(m => m.id === message.id) ? prev : [...prev, { ...message, is_own: true, sender_name: user.full_name }]));
+    setConversations(prev => prev.map(c =>
+      c.id === message.conversation_id
+        ? { ...c, last_message: preview, last_message_at: new Date().toISOString(), last_message_by: user.id }
+        : c
+    ));
+  };
+
+  const postMessage = async (body: Record<string, unknown>, preview: string) => {
     if (!selectedConversationId) return;
-    
+    const response = await fetch(`/api/dependencia/conversations/${selectedConversationId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error('Error al enviar mensaje');
+    const data = await response.json();
+    appendOwnMessage(data.message, preview);
+  };
+
+  const handleSendMessage = async (content: string) => {
     setIsSending(true);
     try {
-      const response = await fetch(`/api/dependencia/conversations/${selectedConversationId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, messageType: 'text' }),
-      });
-
-      if (!response.ok) throw new Error('Error al enviar mensaje');
-
-      const data = await response.json();
-      
-      // Optimistic update - add message to list
-      setMessages(prev => [...prev, {
-        ...data.message,
-        is_own: true,
-        sender_name: user.full_name,
-        sender_avatar: null,
-      }]);
-
-      // Update conversation last message
-      setConversations(prev => prev.map(c => 
-        c.id === selectedConversationId 
-          ? { ...c, last_message: content, last_message_at: new Date().toISOString(), last_message_by: user.id }
-          : c
-      ));
-
-    } catch (error) {
+      await postMessage({ content, messageType: 'text' }, content);
+    } catch {
       setToast({ message: 'Error al enviar mensaje', type: 'error' });
     } finally {
       setIsSending(false);
     }
   };
 
-  const handleMarkAsRead = useCallback(async () => {
+  const handleSendFile = async (file: File) => {
     if (!selectedConversationId) return;
-    
+    setIsSending(true);
     try {
-      await fetch(`/api/dependencia/conversations/${selectedConversationId}/read`, {
-        method: 'POST',
-      });
+      const { file: uploaded, error } = await uploadChatFile(selectedConversationId, file);
+      if (!uploaded) {
+        setToast({ message: error ?? 'No se pudo subir el archivo', type: 'error' });
+        return;
+      }
+      await postMessage(
+        { messageType: 'file', filePath: uploaded.path, fileName: uploaded.name, fileSize: uploaded.size, content: uploaded.name },
+        `📎 ${uploaded.name}`
+      );
+    } catch {
+      setToast({ message: 'Error al enviar el archivo', type: 'error' });
+    } finally {
+      setIsSending(false);
+    }
+  };
 
-      // Update local state
-      setConversations(prev => prev.map(c => 
-        c.id === selectedConversationId 
-          ? { ...c, unread_dependency_count: 0 }
-          : c
-      ));
-
-      // Mark messages as read
-      setMessages(prev => prev.map(m => ({ ...m, is_read: true })));
+  const handleMarkAsRead = useCallback(async () => {
+    const id = selectedConversationId;
+    if (!id) return;
+    try {
+      await fetch(`/api/dependencia/conversations/${id}/read`, { method: 'POST' });
+      setConversations(prev => prev.map(c => (c.id === id ? { ...c, unread_dependency_count: 0 } : c)));
+      // Solo los mensajes recibidos pasan a leídos (los propios los marca el estudiante)
+      setMessages(prev => prev.map(m => (m.is_own ? m : { ...m, is_read: true })));
     } catch (error) {
       console.error('Error marking as read:', error);
     }
@@ -163,20 +219,6 @@ export function MessagesClient({
   const handleGoToTracking = () => {
     if (selectedConversation) {
       router.push(`/dashboard/dependencia/seguimiento?opportunityId=${selectedConversation.vacancy_id}`);
-    }
-  };
-
-  const handleContactStudent = async (conversation: ConversationWithDetails) => {
-    try {
-      const response = await fetch(`/api/dependencia/conversations/${conversation.id}/contact`, {
-        method: 'POST',
-      });
-      if (response.ok) {
-        setToast({ message: 'Candidato marcado como contactado', type: 'success' });
-        setTimeout(() => setToast(null), 3000);
-      }
-    } catch (error) {
-      setToast({ message: 'Error al contactar', type: 'error' });
     }
   };
 
@@ -253,6 +295,7 @@ export function MessagesClient({
             conversation={selectedConversation}
             messages={messages}
             onSendMessage={handleSendMessage}
+            onSendFile={handleSendFile}
             onMarkAsRead={handleMarkAsRead}
             onViewProfile={handleViewProfile}
             onGoToTracking={handleGoToTracking}

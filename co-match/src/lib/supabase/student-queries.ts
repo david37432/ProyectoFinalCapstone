@@ -30,24 +30,6 @@ export interface StudentVacancy {
   is_applied: boolean
 }
 
-export interface StudentProfile {
-  id: string
-  email: string
-  full_name: string
-  role: string
-  phone?: string
-  student_code?: string
-  career?: string
-  semester?: number
-  focus?: string
-  gpa?: number
-  availability_hours?: number
-  skills: string[]
-  interests: string[]
-  experience?: string
-  completion: number
-}
-
 export interface StudentApplication {
   id: string
   vacancy_id: string

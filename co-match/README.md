@@ -30,7 +30,10 @@ En el panel de Supabase → **SQL Editor**, ejecuta el contenido de
 políticas de seguridad (RLS), el máximo PAT de 25 horas, el bucket de fotos de
 perfil y la tabla de reportes, sin crear tablas duplicadas ni borrar datos.
 
-Los scripts de `supabase/legacy/` son de un esquema antiguo y **no se deben ejecutar**.
+Después ejecuta también `supabase/migrations/20261115000000_chat_adjuntos.sql`: agrega las
+columnas de archivo a `messages` y crea el bucket **privado** `chat-files` (10 MB) para los
+adjuntos del chat. Sin esta migración el chat de texto sigue funcionando, pero el clip de
+adjuntar archivos mostrará un aviso de que el almacenamiento no está configurado.
 
 #### Ciclo de una necesidad
 
@@ -45,7 +48,7 @@ Los scripts de `supabase/legacy/` son de un esquema antiguo y **no se deben ejec
 |---|---|
 | `npm run dev` | Servidor de desarrollo |
 | `npm run build` | Build de producción |
-| `npm test` | Tests unitarios (Vitest) |
+| `npm test` | Pruebas unitarias y de integración (Vitest; las de integración usan un Supabase falso en memoria, `src/test/fake-supabase.ts`) |
 | `npm run typecheck` | Verificación de tipos |
 | `npm run lint` | ESLint |
 | `npm run test:e2e` | Pruebas e2e con Playwright (levanta el build local o usa `E2E_BASE_URL`) |

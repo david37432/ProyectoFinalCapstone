@@ -1,5 +1,6 @@
 import { requireAdminApi } from '@/lib/supabase/server-auth'
 import { getConversationForUser, getMessagesForConversation, sendMessage } from '@/lib/supabase/admin-queries'
+import { isPathInConversation } from '@/lib/chat-files'
 import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic';
@@ -31,7 +32,17 @@ export async function POST(request: Request, { params }: Params) {
     const user = auth.user
     const { id } = await params
     const body = await request.json().catch(() => ({}))
-    const content = typeof body?.content === 'string' ? body.content.trim() : ''
+    let content = typeof body?.content === 'string' ? body.content.trim() : ''
+    let file: { path: string; name: string; size?: number } | undefined
+
+    if (body?.messageType === 'file') {
+      if (!isPathInConversation(body.filePath, id) || typeof body.fileName !== 'string' || !body.fileName.trim()) {
+        return NextResponse.json({ error: 'Archivo inválido' }, { status: 400 })
+      }
+      const fileName = body.fileName.trim().slice(0, 200)
+      file = { path: body.filePath, name: fileName, size: Number.isFinite(body.fileSize) ? Number(body.fileSize) : undefined }
+      content = content || fileName
+    }
 
     if (!content) {
       return NextResponse.json({ error: 'El contenido del mensaje es requerido' }, { status: 400 })
@@ -45,7 +56,7 @@ export async function POST(request: Request, { params }: Params) {
       return NextResponse.json({ error: status === 404 ? 'Conversación no encontrada' : 'No autorizado' }, { status })
     }
 
-    const { message, error } = await sendMessage(id, user.id, content)
+    const { message, error } = await sendMessage(id, user.id, content, file, conversation)
     if (error || !message) {
       return NextResponse.json({ error: 'Error al enviar mensaje' }, { status: 500 })
     }

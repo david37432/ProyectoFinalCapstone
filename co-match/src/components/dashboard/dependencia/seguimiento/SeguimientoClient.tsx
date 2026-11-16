@@ -3,12 +3,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, RefreshCw, Download, AlertTriangle, CheckCircle, Clock, TrendingUp, Star, Target, Briefcase, Users, MessageSquare, User, ExternalLink } from 'lucide-react';
+import { UserMinus, Repeat, ArrowLeft, RefreshCw, Download, AlertTriangle, CheckCircle, Clock, TrendingUp, Star, Target, Briefcase, Users, MessageSquare, User, ExternalLink } from 'lucide-react';
 
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { toCsv, downloadCsv, slugify } from '@/lib/export';
 import { MilestoneTimeline } from './MilestoneTimeline';
 import { ProgressCard, KPICard } from './ProgressCard';
 import { StudentCard } from './StudentCard';
@@ -35,19 +37,28 @@ export function SeguimientoClient({ user, projects, selectedProject: initialSele
   const [selectedProject, setSelectedProject] = useState<SeguimientoProject | null>(initialSelectedProject);
   const [isLoading, setIsLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [releaseMode, setReleaseMode] = useState<'remove' | 'replace' | null>(null);
+  const [releaseReason, setReleaseReason] = useState('');
+  const [isReleasing, setIsReleasing] = useState(false);
 
-  // Update URL when project changes
+  // Mantener la URL al cambiar de proyecto (replace: no llena el historial del navegador)
   useEffect(() => {
-    if (selectedProject) {
-      const params = new URLSearchParams(searchParams.toString());
-      params.set('opportunityId', selectedProject.vacancy_id);
-      router.push(`/dashboard/dependencia/seguimiento?${params.toString()}`, { scroll: false });
-    } else {
-      const params = new URLSearchParams(searchParams.toString());
-      params.delete('opportunityId');
-      router.push(`/dashboard/dependencia/seguimiento`, { scroll: false });
-    }
+    const current = searchParams.get('opportunityId');
+    const wanted = selectedProject?.vacancy_id ?? null;
+    if (current === wanted) return;
+    const params = new URLSearchParams(searchParams.toString());
+    if (wanted) params.set('opportunityId', wanted);
+    else params.delete('opportunityId');
+    const qs = params.toString();
+    router.replace(`/dashboard/dependencia/seguimiento${qs ? `?${qs}` : ''}`, { scroll: false });
   }, [selectedProject, router, searchParams]);
+
+  // Al refrescar (router.refresh) el servidor entrega proyectos nuevos
+  const [prevInitial, setPrevInitial] = useState(initialSelectedProject);
+  if (prevInitial !== initialSelectedProject) {
+    setPrevInitial(initialSelectedProject);
+    setSelectedProject(initialSelectedProject);
+  }
 
   // Calculate KPIs for selected project
   const kpis = useMemo(() => {
@@ -127,6 +138,62 @@ export function SeguimientoClient({ user, projects, selectedProject: initialSele
     }
   };
 
+  const handleRefresh = () => {
+    router.refresh();
+    setToast({ message: 'Datos actualizados', type: 'success' });
+  };
+
+  const handleExport = () => {
+    if (!selectedProject) {
+      setToast({ message: 'Selecciona un proyecto para exportar su reporte', type: 'error' });
+      return;
+    }
+    const p = selectedProject;
+    const statusLabel = { pending: 'Pendiente', in_progress: 'En curso', completed: 'Completado' } as const;
+    const csv = toCsv(
+      ['Proyecto', 'Estudiante', 'Hito', 'Estado', 'Fecha límite', 'Fecha completado'],
+      p.milestones.map((m) => [
+        p.vacancy_title,
+        p.candidate_name,
+        m.title,
+        statusLabel[m.status as keyof typeof statusLabel] ?? m.status,
+        m.planned_date ? m.planned_date.slice(0, 10) : '',
+        m.completed_date ? m.completed_date.slice(0, 10) : '',
+      ])
+    );
+    downloadCsv(`seguimiento-${slugify(p.vacancy_title)}.csv`, csv);
+  };
+
+  const handleRelease = async () => {
+    if (!selectedProject || !releaseMode) return;
+    setIsReleasing(true);
+    try {
+      const response = await fetch(`/api/dependencia/applications/${selectedProject.application_id}/contact`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: releaseReason.trim() || undefined }),
+      });
+      if (!response.ok) throw new Error('release failed');
+      const mode = releaseMode;
+      const vacancyId = selectedProject.vacancy_id;
+      setReleaseMode(null);
+      setReleaseReason('');
+      if (mode === 'replace') {
+        // Elegir a otra persona para la misma necesidad
+        router.push(`/dashboard/dependencia/candidatos/${vacancyId}`);
+      } else {
+        setSelectedProject(null);
+        router.replace('/dashboard/dependencia/seguimiento');
+        router.refresh();
+        setToast({ message: 'El estudiante fue retirado del proceso', type: 'success' });
+      }
+    } catch {
+      setToast({ message: 'No se pudo retirar al estudiante. Inténtalo de nuevo.', type: 'error' });
+    } finally {
+      setIsReleasing(false);
+    }
+  };
+
   const handleOpenChat = () => {
     if (selectedProject) {
       router.push(`/dashboard/dependencia/mensajes?studentId=${selectedProject.candidate_id}&opportunityId=${selectedProject.vacancy_id}`);
@@ -174,11 +241,11 @@ export function SeguimientoClient({ user, projects, selectedProject: initialSele
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="gap-1.5">
+          <Button variant="ghost" size="sm" className="gap-1.5" onClick={handleRefresh}>
             <RefreshCw className="w-4 h-4" />
             Actualizar
           </Button>
-          <Button variant="outline" size="sm" className="gap-1.5">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExport}>
             <Download className="w-4 h-4" />
             Exportar reporte
           </Button>
@@ -318,7 +385,7 @@ export function SeguimientoClient({ user, projects, selectedProject: initialSele
                     career: selectedProject.candidate_career,
                     availability_hours: selectedProject.candidate_availability_hours,
                     match_score: selectedProject.match_score,
-                    is_online: true, // Would come from real-time data
+                    is_online: false,
                   }}
                   vacancyId={selectedProject.vacancy_id}
                   onOpenChat={handleOpenChat}
@@ -359,6 +426,24 @@ export function SeguimientoClient({ user, projects, selectedProject: initialSele
                       <ExternalLink className="w-4 h-4" />
                       Ver Seguimiento Detallado
                     </Button>
+                    <div className="pt-2 mt-2 border-t border-neutral-100 space-y-2">
+                      <Button
+                        variant="secondary"
+                        className="w-full justify-start gap-2"
+                        onClick={() => setReleaseMode('replace')}
+                      >
+                        <Repeat className="w-4 h-4" />
+                        Cambiar de estudiante
+                      </Button>
+                      <Button
+                        variant="danger"
+                        className="w-full justify-start gap-2"
+                        onClick={() => setReleaseMode('remove')}
+                      >
+                        <UserMinus className="w-4 h-4" />
+                        Retirar del proceso
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -366,6 +451,32 @@ export function SeguimientoClient({ user, projects, selectedProject: initialSele
           </>
         )}
       </div>
+
+      <ConfirmDialog
+        open={releaseMode !== null}
+        title={releaseMode === 'replace' ? '¿Cambiar de estudiante?' : '¿Retirar al estudiante del proceso?'}
+        description={
+          selectedProject
+            ? `${selectedProject.candidate_name} dejará de participar en «${selectedProject.vacancy_title}»: se eliminan sus hitos, se le avisa por el chat y la necesidad ${releaseMode === 'replace' ? 'queda publicada para que elijas a otra persona.' : 'vuelve a publicarse si no hay otro estudiante en curso.'}`
+            : undefined
+        }
+        confirmLabel={releaseMode === 'replace' ? 'Sí, cambiar' : 'Sí, retirar'}
+        danger
+        busy={isReleasing}
+        onConfirm={handleRelease}
+        onCancel={() => setReleaseMode(null)}
+      >
+        <label className="block text-sm font-medium text-neutral-700">
+          Motivo (opcional, se le muestra al estudiante)
+          <textarea
+            value={releaseReason}
+            onChange={(e) => setReleaseReason(e.target.value)}
+            maxLength={500}
+            rows={3}
+            className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </label>
+      </ConfirmDialog>
 
       {/* Toast Notification */}
       {toast && (

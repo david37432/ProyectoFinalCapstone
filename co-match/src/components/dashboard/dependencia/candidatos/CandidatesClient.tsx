@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Users, Filter, Download, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { toCsv, downloadCsv, slugify } from '@/lib/export';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -35,6 +37,7 @@ export function CandidatesClient({
   initialSelectedVacancyId,
   vacancyTitle 
 }: CandidatesClientProps) {
+  const router = useRouter();
   const [vacancies] = useState<VacancySummary[]>(initialVacancies);
   const [candidates, setCandidates] = useState<CandidateDetail[]>(initialCandidates);
   const [selectedVacancyId, setSelectedVacancyId] = useState<string | null>(initialSelectedVacancyId);
@@ -42,6 +45,30 @@ export function CandidatesClient({
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateDetail | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  // Al refrescar, el servidor entrega datos nuevos
+  const [prevInitial, setPrevInitial] = useState(initialCandidates);
+  if (prevInitial !== initialCandidates) {
+    setPrevInitial(initialCandidates);
+    setCandidates(initialCandidates);
+  }
+
+  const handleRefresh = () => {
+    router.refresh();
+    setToast({ message: 'Lista actualizada', type: 'success' });
+  };
+
+  const handleExport = () => {
+    if (filteredCandidates.length === 0) {
+      setToast({ message: 'No hay candidatos para exportar', type: 'error' });
+      return;
+    }
+    const csv = toCsv(
+      ['Nombre', 'Correo', 'Carrera', 'Semestre', 'Compatibilidad (%)', 'Estado'],
+      filteredCandidates.map((c) => [c.full_name, c.email, c.career, c.semester, c.match_score, c.dependency_status ?? 'pending'])
+    );
+    downloadCsv(`candidatos-${slugify(vacancyTitle)}.csv`, csv);
+  };
 
   // Filter candidates based on active filter
   const filteredCandidates = useMemo(() => {
@@ -131,11 +158,11 @@ export function CandidatesClient({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="gap-1.5">
+          <Button variant="ghost" size="sm" className="gap-1.5" onClick={handleRefresh}>
             <RefreshCw className="w-4 h-4" />
             Actualizar
           </Button>
-          <Button variant="outline" size="sm" className="gap-1.5">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExport}>
             <Download className="w-4 h-4" />
             Exportar
           </Button>

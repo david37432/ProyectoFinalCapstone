@@ -7,12 +7,15 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
 import { cn } from '@/lib/utils';
+import { openChatFile } from '@/lib/chat-upload';
+import { CHAT_ALLOWED_TYPES } from '@/lib/chat-files';
 import type { MessageWithSender, ConversationWithDetails } from '@/lib/supabase/admin-queries';
 
 interface ChatAreaProps {
   conversation: ConversationWithDetails | null;
   messages: MessageWithSender[];
   onSendMessage: (content: string) => void;
+  onSendFile: (file: File) => void;
   onMarkAsRead: () => void;
   onViewProfile: () => void;
   onGoToTracking: () => void;
@@ -43,6 +46,7 @@ export function ChatArea({
   conversation, 
   messages, 
   onSendMessage, 
+  onSendFile,
   onMarkAsRead,
   onViewProfile,
   onGoToTracking,
@@ -51,17 +55,20 @@ export function ChatArea({
 }: ChatAreaProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [newMessage, setNewMessage] = useState('');
+  const [fileError, setFileError] = useState<string | null>(null);
 
   // Scroll to bottom on messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Mark as read when conversation loads
+  // Marcar como leído solo al abrir una conversación (no en cada cambio de la lista)
+  const conversationId = conversation?.id;
   useEffect(() => {
-    if (conversation) onMarkAsRead();
-  }, [conversation, onMarkAsRead]);
+    if (conversationId) onMarkAsRead();
+  }, [conversationId, onMarkAsRead]);
 
   // Group messages by date
   const groupedMessages = useMemo(() => {
@@ -120,13 +127,6 @@ export function ChatArea({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="font-semibold text-neutral-900 truncate">{conversation.candidate_name}</h3>
-            <span className={cn(
-              'w-2 h-2 rounded-full',
-              conversation.is_online ? 'bg-success' : 'bg-neutral-300'
-            )} aria-label={conversation.is_online ? 'En línea' : 'Desconectado'} />
-            <span className="text-xs text-neutral-500">
-              {conversation.is_online ? 'En línea' : 'Desconectado'}
-            </span>
           </div>
           <p className="text-sm text-neutral-500 truncate">{conversation.vacancy_title}</p>
         </div>
@@ -143,7 +143,7 @@ export function ChatArea({
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-6" onClick={() => textareaRef.current?.focus()}>
+      <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {Object.entries(groupedMessages).map(([date, dateMessages]) => (
           <div key={date} className="flex flex-col gap-3">
             <div className="flex items-center gap-3 text-center text-neutral-500 text-xs font-medium">
@@ -154,12 +154,13 @@ export function ChatArea({
             
             {dateMessages.map((message, index) => {
               const isOwn = message.is_own;
+              const firstOfRun = index === 0 || dateMessages[index - 1].sender_id !== message.sender_id;
               const showTime = index === dateMessages.length - 1 || 
                 formatMessageTime(message.created_at) !== formatMessageTime(dateMessages[index + 1]?.created_at || '');
               
               return (
                 <div key={message.id} className={cn('flex gap-2', isOwn ? 'justify-end' : 'justify-start')}>
-                  {!isOwn && index === 0 && (
+                  {!isOwn && firstOfRun && (
                     <Avatar
                       src={message.sender_avatar}
                       alt={message.sender_name}
@@ -173,7 +174,7 @@ export function ChatArea({
                     'max-w-[70%] flex flex-col',
                     isOwn ? 'items-end' : 'items-start'
                   )}>
-                    {!isOwn && index === 0 && (
+                    {!isOwn && firstOfRun && (
                       <span className="text-xs text-neutral-500 mb-1 ml-1">{message.sender_name}</span>
                     )}
                     
@@ -184,10 +185,18 @@ export function ChatArea({
                         : 'bg-neutral-100 text-neutral-900 rounded-tl-sm'
                     )}>
                       {message.message_type === 'file' && message.file_url ? (
-                        <a href={message.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
-                          <Paperclip className="w-4 h-4" />
-                          <span className="underline">{message.file_name || 'Archivo'}</span>
-                        </a>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const err = await openChatFile(message.file_url!);
+                            setFileError(err);
+                          }}
+                          className="flex items-center gap-2 text-left"
+                          title="Abrir archivo"
+                        >
+                          <Paperclip className="w-4 h-4 shrink-0" />
+                          <span className="underline break-all">{message.file_name || 'Archivo'}</span>
+                        </button>
                       ) : (
                         <p className="whitespace-pre-wrap break-words">{message.content}</p>
                       )}
@@ -219,13 +228,31 @@ export function ChatArea({
 
       {/* Message Input */}
       <div className="p-4 border-t border-neutral-100 bg-white">
+        {fileError && <p role="alert" className="mb-2 text-sm text-danger">{fileError}</p>}
         <form onSubmit={handleSubmit} className="flex items-end gap-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept={Object.keys(CHAT_ALLOWED_TYPES).join(',')}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) {
+                setFileError(null);
+                onSendFile(file);
+              }
+            }}
+          />
           <Button
             type="button"
             variant="ghost"
             size="sm"
             className="p-2"
             disabled={isSending}
+            onClick={() => fileInputRef.current?.click()}
+            aria-label="Adjuntar archivo"
+            title="Adjuntar archivo (máx. 10 MB)"
           >
             <Paperclip className="w-5 h-5" />
           </Button>
@@ -241,6 +268,7 @@ export function ChatArea({
               className="w-full px-4 py-3 rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none text-sm max-h-32"
               style={{ minHeight: '48px' }}
               disabled={isSending}
+              maxLength={5000}
             />
           </div>
           

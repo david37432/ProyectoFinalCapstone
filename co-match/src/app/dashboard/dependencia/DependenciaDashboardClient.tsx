@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { AdminMetricsCards } from './AdminMetricsCards';
 import { VacanciesTable } from './VacanciesTable';
 import { TopCandidatesPanel } from './TopCandidatesPanel';
@@ -16,9 +17,10 @@ interface DependenciaDashboardClientProps {
   initialMetrics: AdminMetrics;
   initialVacancies: VacancyWithDetails[];
   initialTopCandidates: TopCandidate[];
+  searchQuery?: string;
 }
 
-export function DependenciaDashboardClient({ user, initialMetrics, initialVacancies, initialTopCandidates }: DependenciaDashboardClientProps) {
+export function DependenciaDashboardClient({ user, initialMetrics, initialVacancies, initialTopCandidates, searchQuery }: DependenciaDashboardClientProps) {
   // El encabezado y el menú lateral los pone dependencia/layout.tsx (antes se dibujaban dos veces)
   return (
         <div className="p-4 sm:p-6 lg:p-8">
@@ -36,6 +38,13 @@ export function DependenciaDashboardClient({ user, initialMetrics, initialVacanc
             </div>
 
             <AdminMetricsCards metrics={initialMetrics} />
+
+            {searchQuery && (
+              <p className="text-sm text-neutral-600">
+                {initialVacancies.length} resultado{initialVacancies.length !== 1 ? 's' : ''} para «{searchQuery}» ·{' '}
+                <Link href="/dashboard/dependencia" className="text-primary hover:underline">Limpiar búsqueda</Link>
+              </p>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">

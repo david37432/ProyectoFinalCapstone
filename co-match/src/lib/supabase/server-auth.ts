@@ -90,11 +90,6 @@ export async function requireRole(allowedRoles: string[]): Promise<{ user: AuthU
   return requireAuth(allowedRoles)
 }
 
-export async function requireStudent(): Promise<AuthUser> {
-  const authData = await requireRole(['estudiante'])
-  return authData.user
-}
-
 export async function requireAdmin(): Promise<AuthUser> {
   const authData = await requireRole(['dependencia'])
   return authData.user

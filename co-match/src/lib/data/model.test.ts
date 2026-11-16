@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   opportunityPhase,
   isActiveOpportunity,
-  opportunityStatusLabel,
   PUBLISHED_STATUS_VALUES,
   parseSkillList,
   newApplicationRow,
@@ -32,11 +31,6 @@ describe('estado de la necesidad', () => {
     expect(isActiveOpportunity('published')).toBe(true);
     expect(isActiveOpportunity('in_progress')).toBe(true);
     expect(isActiveOpportunity('closed')).toBe(false);
-  });
-
-  it('etiquetas en español', () => {
-    expect(opportunityStatusLabel('pending_pat')).toBe('Pendiente revisión PAT');
-    expect(opportunityStatusLabel('published')).toBe('Publicada');
   });
 
   it('la lista de publicadas incluye "published"', () => {

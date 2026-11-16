@@ -1,12 +1,19 @@
 import { requireAdmin } from '@/lib/supabase/server-auth'
 import { DependenciaDashboardClient } from './DependenciaDashboardClient'
 import { getAdminMetrics, getVacanciesWithDetails, getTopCandidates, getUserProfile } from '@/lib/supabase/admin-queries'
+import { filterVacancies } from '@/lib/search'
 import type { AdminMetrics, VacancyWithDetails, TopCandidate } from '@/lib/supabase/admin-queries'
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-export default async function DependenciaDashboardPage() {
+export default async function DependenciaDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>
+}) {
+  const { q } = await searchParams
+  const query = (q ?? '').trim().slice(0, 100)
   const user = await requireAdmin()
   
   const [profile, metrics, vacancies, topCandidates] = await Promise.all([
@@ -30,7 +37,8 @@ export default async function DependenciaDashboardPage() {
         confirmedMatches: metrics.confirmedMatches,
         projectsInProgress: metrics.projectsInProgress,
       }}
-      initialVacancies={vacancies}
+      initialVacancies={query ? filterVacancies(vacancies, query) : vacancies}
+      searchQuery={query}
       initialTopCandidates={topCandidates}
     />
   )

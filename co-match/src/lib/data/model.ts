@@ -54,20 +54,6 @@ export function isActiveOpportunity(status: string | null | undefined): boolean 
 /** Valores de status que los estudiantes pueden ver en Explorar. */
 export const PUBLISHED_STATUS_VALUES = Array.from(PUBLISHED_SET);
 
-/** Etiqueta en español para mostrar en tablas. */
-export function opportunityStatusLabel(status: string | null | undefined): string {
-  switch (opportunityPhase(status)) {
-    case 'pending':
-      return 'Pendiente revisión PAT';
-    case 'published':
-      return 'Publicada';
-    case 'in_progress':
-      return 'En curso';
-    default:
-      return 'Cerrada';
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Habilidades guardadas como jsonb: ["Python", ...] o [{ "name": "Python" }, ...]
 // ---------------------------------------------------------------------------
@@ -213,4 +199,31 @@ export function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
     else map.set(k, [row]);
   }
   return map;
+}
+
+// ---------------------------------------------------------------------------
+// Retirar / cambiar al estudiante de un proyecto, y borrar necesidades
+// ---------------------------------------------------------------------------
+export const CANCELLED_SET = new Set(['cancelled', 'cancelada', 'canceled']);
+
+export function isCancelledOpportunity(status: string | null | undefined): boolean {
+  return CANCELLED_SET.has(norm(status));
+}
+
+/**
+ * Estado de la necesidad después de retirar a un estudiante:
+ * si ya no queda ningún match vuelve a "publicada" para elegir a otra persona.
+ */
+export function opportunityStatusAfterRelease(remainingMatches: number): string {
+  return remainingMatches > 0 ? OPPORTUNITY_STATUS.IN_PROGRESS : OPPORTUNITY_STATUS.PUBLISHED;
+}
+
+/** Valores de la postulación cuando la dependencia retira al estudiante del proceso. */
+export function releasedApplicationValues() {
+  return { dependency_status: DEPENDENCY_STATUS.REJECTED, is_match: false };
+}
+
+/** Una necesidad sin postulaciones se puede borrar; con postulaciones se cancela para conservar el historial. */
+export function deleteStrategy(applicationCount: number): 'delete' | 'cancel' {
+  return applicationCount === 0 ? 'delete' : 'cancel';
 }

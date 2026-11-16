@@ -3,7 +3,9 @@
 import { Badge } from '@/components/ui/Badge';
 import { formatRelativeTime } from '@/lib/utils';
 import { VacancyWithDetails } from '@/lib/supabase/admin-queries';
-import { MoreVertical, Eye, Edit, Trash2, ExternalLink } from 'lucide-react';
+import Link from 'next/link';
+import { ExternalLink } from 'lucide-react';
+import { VacancyRowActions } from '@/components/dashboard/dependencia/necesidades/VacancyRowActions';
 
 interface VacanciesTableProps {
   vacancies: VacancyWithDetails[];
@@ -34,10 +36,10 @@ export function VacanciesTable({ vacancies }: VacanciesTableProps) {
           </svg>
           <h3 className="text-lg font-medium text-neutral-900 mb-1">No hay necesidades publicadas</h3>
           <p className="text-neutral-500 text-sm mb-4">Comienza publicando tu primera necesidad</p>
-          <a href="/dashboard/dependencia/publicar" className="inline-flex items-center gap-2 text-primary font-medium hover:underline">
+          <Link href="/dashboard/dependencia/publicar" className="inline-flex items-center gap-2 text-primary font-medium hover:underline">
             Publicar necesidad
             <ExternalLink className="w-4 h-4" />
-          </a>
+          </Link>
         </div>
       </div>
     );
@@ -69,7 +71,9 @@ export function VacanciesTable({ vacancies }: VacanciesTableProps) {
               <tr key={vacancy.id} className="hover:bg-neutral-50 transition-colors">
                 <td className="px-6 py-4">
                   <div>
-                    <h3 className="font-medium text-neutral-900 truncate max-w-xs">{vacancy.title}</h3>
+                    <Link href={`/dashboard/dependencia/necesidades/${vacancy.id}`} className="font-medium text-neutral-900 hover:text-primary truncate max-w-xs block">
+                      {vacancy.title}
+                    </Link>
                     <div className="flex flex-wrap gap-1 mt-1">
                       {vacancy.required_skills.slice(0, 3).map((skill) => (
                         <Badge key={skill} variant="outline" size="sm" className="bg-neutral-50 border-neutral-200 text-neutral-700">
@@ -107,32 +111,7 @@ export function VacanciesTable({ vacancies }: VacanciesTableProps) {
                   {vacancy.pat_hours_per_week} hrs
                 </td>
                 <td className="px-6 py-4 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <button
-                      className="p-2 rounded-lg text-neutral-400 hover:text-primary hover:bg-primary/10 transition-colors"
-                      aria-label="Ver detalles"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
-                    <button
-                      className="p-2 rounded-lg text-neutral-400 hover:text-primary hover:bg-primary/10 transition-colors"
-                      aria-label="Editar"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      className="p-2 rounded-lg text-neutral-400 hover:text-danger hover:bg-danger/10 transition-colors"
-                      aria-label="Eliminar"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
-                      aria-label="Más opciones"
-                    >
-                      <MoreVertical className="w-4 h-4" />
-                    </button>
-                  </div>
+                  <VacancyRowActions id={vacancy.id} title={vacancy.title} status={vacancy.status} hasApplications={vacancy.candidates_count > 0} />
                 </td>
               </tr>
             ))}

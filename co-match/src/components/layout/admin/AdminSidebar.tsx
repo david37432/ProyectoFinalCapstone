@@ -2,14 +2,16 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { logoutAction } from '@/app/auth/login/actions';
 import { cn } from '@/lib/utils';
-import { LayoutDashboard, PlusCircle, Users, MessageCircle, ClipboardList, LogOut, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, Users, MessageCircle, ClipboardList, LogOut, ChevronLeft, ChevronRight, X } from 'lucide-react';
 
 interface AdminSidebarProps {
   isCollapsed: boolean;
   onToggle: () => void;
+  isMobileOpen: boolean;
+  onMobileClose: () => void;
 }
 
 const navigation = [
@@ -20,10 +22,16 @@ const navigation = [
   { name: 'Seguimiento', href: '/dashboard/dependencia/seguimiento', icon: ClipboardList },
 ];
 
-export function AdminSidebar({ isCollapsed, onToggle }: AdminSidebarProps) {
+export function AdminSidebar({ isCollapsed, onToggle, isMobileOpen, onMobileClose }: AdminSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
+
+  // En móvil el menú se cierra al navegar
+  useEffect(() => {
+    onMobileClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   const handleLogout = async () => {
     if (loggingOut) return;
@@ -33,75 +41,93 @@ export function AdminSidebar({ isCollapsed, onToggle }: AdminSidebarProps) {
     router.refresh();
   };
 
-  return (
-    <aside
-      className={cn(
-        'fixed top-16 left-0 z-30 bg-white border-r border-neutral-200 h-[calc(100vh-4rem)] transition-all duration-300',
-        isCollapsed ? 'w-16' : 'w-64'
-      )}
-      aria-label="Navegación principal del administrador"
-    >
-      <nav className="flex flex-col h-full p-3" aria-label="Menú de navegación">
-        <ul className="space-y-1 flex-1" role="list">
-          {navigation.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
-            return (
-              <li key={item.name}>
-                <Link
-                  href={item.href}
-                  className={cn(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors',
-                    isActive
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900',
-                    isCollapsed && 'justify-center'
-                  )}
-                  aria-current={isActive ? 'page' : undefined}
-                  title={isCollapsed ? item.name : undefined}
-                >
-                  <item.icon className={cn('w-5 h-5 flex-shrink-0', isActive && 'text-primary')} aria-hidden="true" />
-                  {!isCollapsed && <span className="font-medium text-sm">{item.name}</span>}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+  // En escritorio puede colapsarse; en el menú móvil siempre se muestra completo
+  const collapsed = isCollapsed && !isMobileOpen;
 
-        <div className="pt-4 border-t border-neutral-200 space-y-1">
+  return (
+    <>
+      {isMobileOpen && (
+        <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={onMobileClose} aria-hidden="true" />
+      )}
+      <aside
+        className={cn(
+          'fixed top-16 left-0 z-50 lg:z-30 bg-white border-r border-neutral-200 h-[calc(100vh-4rem)] transition-all duration-300',
+          'w-64',
+          isCollapsed && 'lg:w-16',
+          isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        )}
+        aria-label="Navegación principal del administrador"
+      >
+        <nav className="flex flex-col h-full p-3" aria-label="Menú de navegación">
           <button
             type="button"
-            onClick={handleLogout}
-            disabled={loggingOut}
-            className={cn(
-              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-danger hover:bg-danger/10 transition-colors disabled:opacity-60',
-              isCollapsed && 'justify-center'
-            )}
-            title={isCollapsed ? 'Cerrar sesión' : undefined}
+            onClick={onMobileClose}
+            className="lg:hidden self-end p-2 mb-2 rounded-lg text-neutral-500 hover:bg-neutral-100"
+            aria-label="Cerrar menú"
           >
-            <LogOut className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
-            {!isCollapsed && <span className="font-medium text-sm">{loggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}</span>}
+            <X className="w-5 h-5" />
           </button>
-          <button
-            type="button"
-            onClick={onToggle}
-            className={cn(
-              'w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 transition-colors',
-              isCollapsed && 'justify-center'
-            )}
-            aria-label={isCollapsed ? 'Expandir menú' : 'Colapsar menú'}
-            aria-expanded={!isCollapsed}
-          >
-            {isCollapsed ? (
-              <ChevronRight className="w-5 h-5" aria-hidden="true" />
-            ) : (
-              <>
-                <ChevronLeft className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
-                <span className="font-medium text-sm">Colapsar menú</span>
-              </>
-            )}
-          </button>
-        </div>
-      </nav>
-    </aside>
+          <ul className="space-y-1 flex-1" role="list">
+            {navigation.map((item) => {
+              const isActive =
+                item.href === '/dashboard/dependencia'
+                  ? pathname === item.href || pathname.startsWith('/dashboard/dependencia/necesidades')
+                  : pathname === item.href || pathname.startsWith(item.href + '/');
+              return (
+                <li key={item.name}>
+                  <Link
+                    href={item.href}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors',
+                      isActive
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900',
+                      collapsed && 'justify-center'
+                    )}
+                    aria-current={isActive ? 'page' : undefined}
+                    title={collapsed ? item.name : undefined}
+                  >
+                    <item.icon className={cn('w-5 h-5 flex-shrink-0', isActive && 'text-primary')} aria-hidden="true" />
+                    {!collapsed && <span className="font-medium text-sm">{item.name}</span>}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="pt-4 border-t border-neutral-200 space-y-1">
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-danger hover:bg-danger/10 transition-colors disabled:opacity-60',
+                collapsed && 'justify-center'
+              )}
+              title={collapsed ? 'Cerrar sesión' : undefined}
+            >
+              <LogOut className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
+              {!collapsed && <span className="font-medium text-sm">{loggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}</span>}
+            </button>
+            <button
+              type="button"
+              onClick={onToggle}
+              className="hidden lg:flex w-full items-center justify-center gap-2 px-3 py-2 rounded-lg text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 transition-colors"
+              aria-label={isCollapsed ? 'Expandir menú' : 'Colapsar menú'}
+              aria-expanded={!isCollapsed}
+            >
+              {isCollapsed ? (
+                <ChevronRight className="w-5 h-5" aria-hidden="true" />
+              ) : (
+                <>
+                  <ChevronLeft className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
+                  <span className="font-medium text-sm">Colapsar menú</span>
+                </>
+              )}
+            </button>
+          </div>
+        </nav>
+      </aside>
+    </>
   );
 }

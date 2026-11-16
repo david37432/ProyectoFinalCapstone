@@ -10,6 +10,7 @@
  * No se usan "joins" embebidos de PostgREST porque dependen de llaves foráneas
  * que no sabemos si existen; se consulta cada tabla y se cruza en memoria.
  */
+import { cache } from 'react';
 import { createClient } from './server';
 import {
   OPPORTUNITY_STATUS,
@@ -22,7 +23,12 @@ import {
   groupBy,
   defaultMilestoneRows,
   DEPENDENCY_STATUS,
+  isCancelledOpportunity,
+  opportunityStatusAfterRelease,
+  releasedApplicationValues,
+  deleteStrategy,
 } from '@/lib/data/model';
+import { buildDependencyNotifications, type DependencyNotification } from '@/lib/notifications';
 import { skillKey } from '@/lib/matching';
 
 type Client = Awaited<ReturnType<typeof createClient>>;
@@ -182,21 +188,33 @@ function tableStatus(status: string | null | undefined): string {
   }
 }
 
-async function getOwnOpportunities(supabase: Client, dependencyId: string) {
+// Memoizadas por petición: el panel llama a varias funciones que piden lo mismo
+const ownOpportunitiesCached = cache(async (dependencyId: string) => {
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from('opportunities')
     .select('*')
     .eq('dependency_id', dependencyId)
     .order('created_at', { ascending: false });
   if (error) console.error('[admin-queries] opportunities:', error.message);
-  return (data ?? []) as any[];
-}
+  // Las necesidades canceladas (eliminadas) no se muestran
+  return ((data ?? []) as any[]).filter((o) => !isCancelledOpportunity(o.status));
+});
 
-async function getApplicationsFor(supabase: Client, opportunityIds: string[]) {
-  if (opportunityIds.length === 0) return [] as any[];
-  const { data, error } = await supabase.from('applications').select('*').in('opportunity_id', opportunityIds);
+const applicationsCached = cache(async (idsKey: string) => {
+  if (!idsKey) return [] as any[];
+  const supabase = await createClient();
+  const { data, error } = await supabase.from('applications').select('*').in('opportunity_id', idsKey.split(','));
   if (error) console.error('[admin-queries] applications:', error.message);
   return (data ?? []) as any[];
+});
+
+async function getOwnOpportunities(_supabase: Client, dependencyId: string) {
+  return ownOpportunitiesCached(dependencyId);
+}
+
+async function getApplicationsFor(_supabase: Client, opportunityIds: string[]) {
+  return applicationsCached([...opportunityIds].sort().join(','));
 }
 
 async function getProfilesByIds(supabase: Client, ids: string[]) {
@@ -429,12 +447,6 @@ export async function contactCandidate(
   return { conversationId: conversation.id };
 }
 
-export async function updateApplicationDependencyStatus(applicationId: string, status: string) {
-  const supabase = await createClient();
-  const { error } = await supabase.from('applications').update({ dependency_status: status }).eq('id', applicationId);
-  return { error };
-}
-
 // ============================================================================
 // Conversaciones y mensajes
 // ============================================================================
@@ -500,9 +512,9 @@ function toMessageWithSender(m: any, sender: any, currentUserId: string): Messag
     sender_name: sender?.full_name || 'Sin nombre',
     sender_avatar: sender?.avatar_url || null,
     content: m.content,
-    message_type: 'text',
-    file_url: null,
-    file_name: null,
+    message_type: m.message_type === 'file' && m.file_url ? 'file' : 'text',
+    file_url: m.file_url ?? null,
+    file_name: m.file_name ?? null,
     is_read: !!m.is_read,
     created_at: m.created_at,
     is_own: m.sender_id === currentUserId,
@@ -518,23 +530,41 @@ export async function getConversationForUser(conversationId: string, userId: str
   return { conversation: data as any, status: 200 as const };
 }
 
-export async function sendMessage(conversationId: string, senderId: string, content: string) {
+export interface MessageFile {
+  path: string;
+  name: string;
+  size?: number;
+}
+
+export async function sendMessage(
+  conversationId: string,
+  senderId: string,
+  content: string,
+  file?: MessageFile,
+  knownConversation?: any
+) {
   const supabase = await createClient();
-  const { data: message, error } = await supabase
-    .from('messages')
-    .insert({ conversation_id: conversationId, sender_id: senderId, content, is_read: false })
-    .select()
-    .single();
+  const row: Record<string, unknown> = { conversation_id: conversationId, sender_id: senderId, content, is_read: false };
+  if (file) {
+    row.message_type = 'file';
+    row.file_url = file.path;
+    row.file_name = file.name;
+    if (file.size != null) row.file_size = file.size;
+  }
+  const { data: message, error } = await supabase.from('messages').insert(row).select().single();
   if (error || !message) return { message: null, error };
 
   // Actualizar resumen de la conversación y no leídos del otro participante
-  const { data: conv } = await supabase.from('conversations').select('*').eq('id', conversationId).maybeSingle();
+  // (si el llamador ya tiene la conversación se evita una consulta)
+  const conv =
+    knownConversation ??
+    (await supabase.from('conversations').select('*').eq('id', conversationId).maybeSingle()).data;
   if (conv) {
     const toStudent = conv.dependency_id === senderId;
     await supabase
       .from('conversations')
       .update({
-        last_message: content.slice(0, 500),
+        last_message: (file ? `📎 ${file.name}` : content).slice(0, 500),
         last_message_at: message.created_at,
         ...(toStudent
           ? { unread_student_count: (conv.unread_student_count || 0) + 1 }
@@ -595,12 +625,6 @@ export async function getOrCreateConversation(opportunityId: string, dependencyI
     .single();
   if (error) console.error('[getOrCreateConversation]', error.message);
   return { conversation, error };
-}
-
-export async function getTotalUnreadCount(dependencyId: string): Promise<number> {
-  const supabase = await createClient();
-  const { data } = await supabase.from('conversations').select('unread_dependency_count').eq('dependency_id', dependencyId);
-  return (data ?? []).reduce((sum: number, c: any) => sum + (c.unread_dependency_count || 0), 0);
 }
 
 // ============================================================================
@@ -699,4 +723,215 @@ export async function updateMilestoneStatus(
     .update({ status, completed_at: status === 'completed' ? new Date().toISOString() : null })
     .eq('id', milestoneId);
   return { error: error?.message ?? null, status: error ? 500 : 200 };
+}
+
+
+// ============================================================================
+// Necesidades: detalle, edición, cierre y eliminación
+// ============================================================================
+
+export interface VacancyDetail {
+  id: string;
+  title: string;
+  description: string;
+  area: string;
+  skills: string[];
+  weekly_hours: number;
+  duration_months: number;
+  status: string;
+  rawStatus: string;
+  created_at: string;
+  applications_count: number;
+  matches_count: number;
+}
+
+export async function getOwnVacancyDetail(vacancyId: string, dependencyId: string): Promise<VacancyDetail | null> {
+  const supabase = await createClient();
+  const { data: o } = await supabase.from('opportunities').select('*').eq('id', vacancyId).maybeSingle();
+  if (!o || o.dependency_id !== dependencyId || isCancelledOpportunity(o.status)) return null;
+  const apps = await getApplicationsFor(supabase, [vacancyId]);
+  return {
+    id: o.id,
+    title: o.title ?? '',
+    description: o.description ?? '',
+    area: o.area ?? '',
+    skills: parseSkillList(o.required_skills),
+    weekly_hours: Number(o.weekly_hours) || 0,
+    duration_months: Number(o.duration_months) || 0,
+    status: tableStatus(o.status),
+    rawStatus: o.status ?? '',
+    created_at: o.created_at,
+    applications_count: apps.length,
+    matches_count: apps.filter(isConfirmedMatch).length,
+  };
+}
+
+export interface VacancyChanges {
+  title: string;
+  department: string;
+  description: string;
+  skills: string[];
+  weeklyHours: number;
+  durationMonths: number;
+}
+
+async function ownedOpportunity(supabase: Client, id: string, dependencyId: string) {
+  const { data: o } = await supabase.from('opportunities').select('*').eq('id', id).maybeSingle();
+  if (!o) return { error: 'Necesidad no encontrada', status: 404, opp: null };
+  if (o.dependency_id !== dependencyId) return { error: 'No autorizado', status: 403, opp: null };
+  return { error: null, status: 200, opp: o };
+}
+
+export async function updateVacancy(id: string, dependencyId: string, changes: VacancyChanges) {
+  const supabase = await createClient();
+  const owned = await ownedOpportunity(supabase, id, dependencyId);
+  if (!owned.opp) return { error: owned.error, status: owned.status };
+  const { error } = await supabase
+    .from('opportunities')
+    .update({
+      title: changes.title,
+      description: changes.description,
+      area: changes.department,
+      required_skills: changes.skills,
+      weekly_hours: changes.weeklyHours,
+      duration_months: changes.durationMonths,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+  return { error: error?.message ?? null, status: error ? 500 : 200 };
+}
+
+/** Cierra una necesidad (deja de verse en Explorar) o la vuelve a publicar. */
+export async function setVacancyOpen(id: string, dependencyId: string, open: boolean) {
+  const supabase = await createClient();
+  const owned = await ownedOpportunity(supabase, id, dependencyId);
+  if (!owned.opp) return { error: owned.error, status: owned.status };
+  const apps = await getApplicationsFor(supabase, [id]);
+  const hasMatch = apps.some(isConfirmedMatch);
+  const status = open
+    ? hasMatch
+      ? OPPORTUNITY_STATUS.IN_PROGRESS
+      : OPPORTUNITY_STATUS.PUBLISHED
+    : OPPORTUNITY_STATUS.CLOSED;
+  const { error } = await supabase
+    .from('opportunities')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  return { error: error?.message ?? null, status: error ? 500 : 200 };
+}
+
+/**
+ * Elimina una necesidad. Sin postulaciones se borra; con postulaciones se cancela
+ * (queda oculta) para no dejar postulaciones y conversaciones huérfanas.
+ */
+export async function removeVacancy(id: string, dependencyId: string) {
+  const supabase = await createClient();
+  const owned = await ownedOpportunity(supabase, id, dependencyId);
+  if (!owned.opp) return { error: owned.error, status: owned.status, mode: null };
+  const { data: apps } = await supabase.from('applications').select('id').eq('opportunity_id', id);
+  const mode = deleteStrategy((apps ?? []).length);
+  const { error } =
+    mode === 'delete'
+      ? await supabase.from('opportunities').delete().eq('id', id)
+      : await supabase
+          .from('opportunities')
+          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+          .eq('id', id);
+  return { error: error?.message ?? null, status: error ? 500 : 200, mode };
+}
+
+// ============================================================================
+// Retirar / cambiar al estudiante del proceso
+// ============================================================================
+
+/**
+ * La dependencia ya no quiere continuar con el estudiante: la postulación queda rechazada,
+ * se borran sus hitos, se avisa en el chat y, si no queda otro match, la necesidad vuelve
+ * a estar publicada para elegir a otra persona.
+ */
+export async function releaseCandidate(
+  applicationId: string,
+  dependencyId: string,
+  reason?: string
+): Promise<{ error?: string; status?: number; vacancyId?: string; opportunityStatus?: string }> {
+  const supabase = await createClient();
+  const { data: app } = await supabase.from('applications').select('*').eq('id', applicationId).maybeSingle();
+  if (!app) return { error: 'Postulación no encontrada', status: 404 };
+
+  const { data: opp } = await supabase
+    .from('opportunities')
+    .select('id, dependency_id, title')
+    .eq('id', app.opportunity_id)
+    .maybeSingle();
+  if (!opp || opp.dependency_id !== dependencyId) return { error: 'No autorizado', status: 403 };
+
+  const { error: updateError } = await supabase
+    .from('applications')
+    .update(releasedApplicationValues())
+    .eq('id', applicationId);
+  if (updateError) return { error: `No se pudo actualizar la postulación: ${updateError.message}`, status: 500 };
+
+  await supabase.from('project_milestones').delete().eq('opportunity_id', opp.id).eq('student_id', app.student_id);
+
+  const { data: allApps } = await supabase.from('applications').select('*').eq('opportunity_id', opp.id);
+  const remaining = (allApps ?? []).filter((a: any) => a.id !== applicationId && isConfirmedMatch(a)).length;
+  const opportunityStatus = opportunityStatusAfterRelease(remaining);
+  await supabase
+    .from('opportunities')
+    .update({
+      status: opportunityStatus,
+      ...(remaining === 0 ? { start_date: null, target_end_date: null } : {}),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', opp.id);
+
+  // Aviso al estudiante dentro del chat (si ya existía conversación)
+  const { data: conv } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('opportunity_id', opp.id)
+    .eq('dependency_id', dependencyId)
+    .eq('student_id', app.student_id)
+    .maybeSingle();
+  if (conv) {
+    const note = reason?.trim()
+      ? `La dependencia ha finalizado tu participación en "${opp.title}". Motivo: ${reason.trim().slice(0, 500)}`
+      : `La dependencia ha finalizado tu participación en "${opp.title}".`;
+    await sendMessage(conv.id, dependencyId, note, undefined, conv);
+  }
+
+  return { vacancyId: opp.id, opportunityStatus };
+}
+
+// ============================================================================
+// Notificaciones de la dependencia
+// ============================================================================
+
+export async function getDependencyNotifications(dependencyId: string): Promise<DependencyNotification[]> {
+  const supabase = await createClient();
+  const opportunities = await getOwnOpportunities(supabase, dependencyId);
+  const oppIds = opportunities.map((o) => o.id);
+
+  const [applications, convRes, msRes] = await Promise.all([
+    getApplicationsFor(supabase, oppIds),
+    supabase.from('conversations').select('*').eq('dependency_id', dependencyId),
+    oppIds.length
+      ? supabase.from('project_milestones').select('*').in('opportunity_id', oppIds).neq('status', 'completed')
+      : Promise.resolve({ data: [] as any[] }),
+  ]);
+  const conversations = (convRes.data ?? []) as any[];
+  const profiles = await getProfilesByIds(supabase, [
+    ...applications.map((a) => a.student_id),
+    ...conversations.map((c) => c.student_id),
+  ]);
+
+  return buildDependencyNotifications({
+    opportunities: opportunities.map((o) => ({ id: o.id, title: o.title })),
+    applications,
+    conversations,
+    milestones: (msRes.data ?? []) as any[],
+    studentNames: new Map(
+      [...profiles.entries()].map(([id, p]: [string, any]) => [id, (p.full_name as string) || 'Un estudiante'])
+    ),
+  });
 }

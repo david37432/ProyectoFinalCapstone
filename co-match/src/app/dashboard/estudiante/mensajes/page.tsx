@@ -11,6 +11,8 @@ interface Message {
   isOwn: boolean;
   isRead: boolean;
   createdAt: string;
+  fileUrl?: string | null;
+  fileName?: string | null;
   sender?: any;
 }
 
@@ -76,7 +78,7 @@ export default async function MessagesPage() {
       vacancyTitle: opp?.title || 'Proyecto',
       departmentName: opp?.area || 'Dependencia',
       status: app ? studentApplicationStatus(app) : 'entrevista',
-      lastMessage: last?.content || c.last_message || '',
+      lastMessage: last?.message_type === 'file' ? `📎 ${last.file_name ?? 'Archivo'}` : last?.content || c.last_message || '',
       lastMessageTime: last?.created_at || c.last_message_at || c.created_at,
       unreadCount: messages.filter((m: any) => !m.is_read && m.sender_id !== user.id).length,
       lastAdminMessage: [...messages].reverse().find((m: any) => m.sender_id !== user.id) ?? null,
@@ -87,6 +89,8 @@ export default async function MessagesPage() {
         isOwn: m.sender_id === user.id,
         isRead: m.is_read,
         createdAt: m.created_at,
+        fileUrl: m.message_type === 'file' ? m.file_url ?? null : null,
+        fileName: m.message_type === 'file' ? m.file_name ?? null : null,
       })),
     };
   });

@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { sendStudentMessageAction, markStudentConversationReadAction } from './actions';
+import { sendStudentMessageAction, sendStudentFileAction, markStudentConversationReadAction } from './actions';
+import { uploadChatFile, openChatFile } from '@/lib/chat-upload';
+import { CHAT_ALLOWED_TYPES } from '@/lib/chat-files';
 import {
   MessageSquare,
   Send,
   Paperclip,
-  MoreVertical,
   Check,
   CheckCheck,
   Clock,
@@ -22,6 +23,8 @@ interface Message {
   isOwn: boolean;
   isRead: boolean;
   createdAt: string;
+  fileUrl?: string | null;
+  fileName?: string | null;
   sender?: {
     id: string;
     full_name: string;
@@ -62,92 +65,75 @@ interface StudentMessagesPageProps {
 
 export default function StudentMessagesPage({ initialConversations, userId }: StudentMessagesPageProps) {
   const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(initialConversations[0] ?? null);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
-  const channelRef = useRef<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedIdRef.current = selectedConversation?.applicationId ?? null;
+  });
 
   // Scroll to bottom helper
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  // Subscribe to realtime messages for the selected conversation
+  // Tiempo real (WebSocket de Supabase): un solo canal para todas las conversaciones del estudiante.
+  // RLS garantiza que solo llegan mensajes de sus propias conversaciones.
   useEffect(() => {
-    if (!selectedConversation) return;
-
     const channel = supabase
-      .channel(`messages:${selectedConversation.applicationId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${selectedConversation.applicationId}`,
-        },
-        (payload: any) => {
-          const newMessage = payload.new as any;
-          if (newMessage.sender_id === userId) return; // Don't duplicate own messages
-
-          const newMsg = {
-            id: payload.new.id,
-            content: payload.new.content,
-            senderId: payload.new.sender_id,
-            isOwn: false,
-            isRead: false,
-            createdAt: payload.new.created_at,
-          };
-
-          setConversations(prev => prev.map(conv => {
-            if (conv.applicationId !== selectedConversation.applicationId) return conv;
-            return {
-              ...conv,
-              messages: [...conv.messages, newMsg],
-              lastMessage: newMsg.content,
-              lastMessageTime: newMsg.createdAt,
-            };
-          }));
-          // La conversación abierta también debe mostrar el mensaje nuevo
-          setSelectedConversation(prev =>
-            prev && prev.applicationId === selectedConversation.applicationId && !prev.messages.some(m => m.id === newMsg.id)
-              ? { ...prev, messages: [...prev.messages, newMsg], lastMessage: newMsg.content, lastMessageTime: newMsg.createdAt }
-              : prev
-          );
-          void markStudentConversationReadAction(selectedConversation.applicationId);
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${selectedConversation.applicationId}`,
-        },
-        (payload: any) => {
-          const updatedMessage = payload.new as any;
-          setConversations(prev => prev.map(conv => {
-            if (conv.applicationId !== selectedConversation.applicationId) return conv;
-            return {
-              ...conv,
-              messages: conv.messages.map(m => 
-                m.id === updatedMessage.id ? { ...m, isRead: updatedMessage.is_read } : m
-              ),
-            };
-          }));
-        }
-      )
+      .channel(`student-messages:${userId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload: any) => {
+        const m = payload.new;
+        if (!m || m.sender_id === userId) return; // los propios ya se agregaron al enviarlos
+        const convId = m.conversation_id as string;
+        const isOpen = selectedIdRef.current === convId;
+        const newMsg: Message = {
+          id: m.id,
+          content: m.content,
+          senderId: m.sender_id,
+          isOwn: false,
+          isRead: isOpen,
+          createdAt: m.created_at,
+          fileUrl: m.message_type === 'file' ? m.file_url ?? null : null,
+          fileName: m.message_type === 'file' ? m.file_name ?? null : null,
+        };
+        const preview = newMsg.fileUrl ? `📎 ${newMsg.fileName ?? 'Archivo'}` : newMsg.content;
+        const apply = (conv: Conversation): Conversation =>
+          conv.applicationId !== convId || conv.messages.some((x) => x.id === newMsg.id)
+            ? conv
+            : {
+                ...conv,
+                messages: [...conv.messages, newMsg],
+                lastMessage: preview,
+                lastMessageTime: newMsg.createdAt,
+                unreadCount: isOpen ? 0 : conv.unreadCount + 1,
+              };
+        setConversations((prev) => prev.map(apply));
+        setSelectedConversation((prev) => (prev ? apply(prev) : prev));
+        if (isOpen) void markStudentConversationReadAction(convId);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload: any) => {
+        const m = payload.new;
+        if (!m) return;
+        const update = (conv: Conversation): Conversation =>
+          conv.applicationId !== m.conversation_id
+            ? conv
+            : { ...conv, messages: conv.messages.map((x) => (x.id === m.id ? { ...x, isRead: !!m.is_read } : x)) };
+        setConversations((prev) => prev.map(update));
+        setSelectedConversation((prev) => (prev ? update(prev) : prev));
+      })
       .subscribe();
-
-    channelRef.current = channel;
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedConversation?.applicationId, userId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   // Auto-scroll when messages change
   useEffect(() => {
@@ -225,6 +211,46 @@ export default function StudentMessagesPage({ initialConversations, userId }: St
     }
   };
 
+  const handleSendFile = async (file: File) => {
+    if (!selectedConversation || isSending) return;
+    setChatError(null);
+    setIsSending(true);
+    try {
+      const convId = selectedConversation.applicationId;
+      const { file: uploaded, error } = await uploadChatFile(convId, file);
+      if (!uploaded) {
+        setChatError(error ?? 'No se pudo subir el archivo');
+        return;
+      }
+      const result = await sendStudentFileAction(convId, uploaded);
+      if (!result.success || !result.message) {
+        setChatError(result.error ?? 'No se pudo enviar el archivo');
+        return;
+      }
+      const sent = result.message;
+      const ownMsg: Message = {
+        id: sent.id,
+        content: sent.content,
+        senderId: userId,
+        isOwn: true,
+        isRead: false,
+        createdAt: sent.createdAt,
+        fileUrl: sent.fileUrl ?? uploaded.path,
+        fileName: sent.fileName ?? uploaded.name,
+      };
+      const appendTo = (conv: Conversation) =>
+        conv.applicationId === convId && !conv.messages.some((x) => x.id === ownMsg.id)
+          ? { ...conv, messages: [...conv.messages, ownMsg], lastMessage: `📎 ${ownMsg.fileName}`, lastMessageTime: ownMsg.createdAt }
+          : conv;
+      setConversations((prev) => prev.map(appendTo));
+      setSelectedConversation((prev) => (prev ? appendTo(prev) : prev));
+    } catch {
+      setChatError('No se pudo enviar el archivo');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   // Empty state when no conversations
   if (conversations.length === 0) {
     return (
@@ -245,11 +271,6 @@ export default function StudentMessagesPage({ initialConversations, userId }: St
         </div>
       </div>
     );
-  }
-
-  // Default to first conversation if none selected
-  if (!selectedConversation && conversations.length > 0) {
-    setSelectedConversation(conversations[0]);
   }
 
   return (
@@ -321,9 +342,6 @@ export default function StudentMessagesPage({ initialConversations, userId }: St
                 }`}>
                   {selectedConversation.status === 'aceptada' ? 'Aceptada' : 'En entrevista'}
                 </span>
-                <button className="p-2 rounded-lg text-neutral-500 hover:bg-neutral-100">
-                  <MoreVertical className="w-5 h-5" />
-                </button>
               </div>
             </div>
 
@@ -331,16 +349,22 @@ export default function StudentMessagesPage({ initialConversations, userId }: St
               {selectedConversation.messages.map((msg) => (
                 <div key={msg.id} className={`flex ${msg.isOwn ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[70%] ${msg.isOwn ? 'bg-primary text-white' : 'bg-white text-neutral-900'} rounded-2xl px-4 py-2 shadow-sm`}>
-                    <p className="text-sm">{msg.content}</p>
+                    {msg.fileUrl ? (
+                      <button
+                        type="button"
+                        onClick={async () => setChatError(await openChatFile(msg.fileUrl!))}
+                        className="flex items-center gap-2 text-sm text-left"
+                        title="Abrir archivo"
+                      >
+                        <Paperclip className="w-4 h-4 shrink-0" />
+                        <span className="underline break-all">{msg.fileName || 'Archivo'}</span>
+                      </button>
+                    ) : (
+                      <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                    )}
                     <div className={`flex items-center gap-1 mt-1 text-xs ${msg.isOwn ? 'justify-end text-primary/70' : 'justify-start text-neutral-400'}`}>
                       <span>{formatMessageTime(msg.createdAt)}</span>
-                      {msg.isOwn && (
-                        <>
-                          <Check className="w-3.5 h-3.5" />
-                          <CheckCheck className="w-3.5 h-3.5" />
-                        </>
-                      )}
-                      {!msg.isOwn && <Clock className="w-3.5 h-3.5" />}
+                      {msg.isOwn && (msg.isRead ? <CheckCheck className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />)}
                     </div>
                   </div>
                 </div>
@@ -348,6 +372,9 @@ export default function StudentMessagesPage({ initialConversations, userId }: St
               <div id="messages-end" ref={messagesEndRef} />
             </div>
 
+            {chatError && (
+              <p role="alert" className="px-4 py-2 text-sm text-danger bg-danger/5 border-t border-danger/20">{chatError}</p>
+            )}
             <form onSubmit={handleSendMessage} className="p-4 border-t border-neutral-200 bg-white flex items-center gap-2">
               <button 
                 type="button" 
@@ -361,6 +388,7 @@ export default function StudentMessagesPage({ initialConversations, userId }: St
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 placeholder="Escribe un mensaje..."
+                maxLength={5000}
                 className="flex-1 px-4 py-2.5 rounded-full border border-neutral-300 bg-white text-neutral-900 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                 disabled={isSending}
               />

@@ -1,12 +1,13 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { isPathInConversation } from '@/lib/chat-files';
 import { getConversationForUser, sendMessage, markMessagesAsRead } from '@/lib/supabase/admin-queries';
 
 export interface StudentSendResult {
   success: boolean;
   error?: string;
-  message?: { id: string; content: string; createdAt: string };
+  message?: { id: string; content: string; createdAt: string; fileUrl?: string | null; fileName?: string | null };
 }
 
 async function currentUserId(): Promise<string | null> {
@@ -29,7 +30,7 @@ export async function sendStudentMessageAction(conversationId: string, content: 
   const { conversation } = await getConversationForUser(conversationId, userId);
   if (!conversation || conversation.student_id !== userId) return { success: false, error: 'No autorizado' };
 
-  const { message, error } = await sendMessage(conversationId, userId, text);
+  const { message, error } = await sendMessage(conversationId, userId, text, undefined, conversation);
   if (error || !message) return { success: false, error: 'No se pudo enviar el mensaje' };
   return { success: true, message: { id: message.id, content: message.content, createdAt: message.created_at } };
 }
@@ -42,4 +43,27 @@ export async function markStudentConversationReadAction(conversationId: string):
   if (!conversation || conversation.student_id !== userId) return { success: false };
   const { error } = await markMessagesAsRead(conversationId, userId);
   return { success: !error };
+}
+
+/** El estudiante envía un archivo ya subido a Storage (la ruta debe empezar por el id de la conversación). */
+export async function sendStudentFileAction(
+  conversationId: string,
+  file: { path: string; name: string; size?: number }
+): Promise<StudentSendResult> {
+  if (!isPathInConversation(file?.path, conversationId) || !file.name?.trim()) {
+    return { success: false, error: 'Archivo inválido' };
+  }
+  const userId = await currentUserId();
+  if (!userId) return { success: false, error: 'Debes iniciar sesión' };
+
+  const { conversation } = await getConversationForUser(conversationId, userId);
+  if (!conversation || conversation.student_id !== userId) return { success: false, error: 'No autorizado' };
+
+  const name = file.name.trim().slice(0, 200);
+  const { message, error } = await sendMessage(conversationId, userId, name, { ...file, name }, conversation);
+  if (error || !message) return { success: false, error: 'No se pudo enviar el archivo' };
+  return {
+    success: true,
+    message: { id: message.id, content: message.content, createdAt: message.created_at, fileUrl: message.file_url, fileName: message.file_name },
+  };
 }

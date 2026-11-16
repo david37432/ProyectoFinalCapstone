@@ -47,10 +47,3 @@ export function getMatchScoreBgColor(score: number): string {
   if (score >= 40) return 'bg-warning/10 text-warning';
   return 'bg-danger/10 text-danger';
 }
-
-export function getMatchScoreLabel(score: number): string {
-  if (score >= 80) return 'Alta coincidencia';
-  if (score >= 60) return 'Buena coincidencia';
-  if (score >= 40) return 'Coincidencia media';
-  return 'Baja coincidencia';
-}
