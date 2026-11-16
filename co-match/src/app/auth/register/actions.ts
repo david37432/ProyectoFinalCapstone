@@ -5,6 +5,7 @@ import { cookies, headers } from 'next/headers';
 import { getSupabaseConfig } from '@/lib/supabase/config';
 import { toProfileRole, homePathForRole } from '@/lib/auth-roles';
 import { siteUrlFrom } from '@/lib/site-url';
+import { PRIVACY_POLICY_VERSION } from '@/lib/privacy';
 
 export interface RegisterPayload {
   email: string;
@@ -13,6 +14,8 @@ export interface RegisterPayload {
   document_number: string;
   phone: string;
   role: 'postulante' | 'reclutador';
+  /** El usuario aceptó la Política de Privacidad y Tratamiento de Datos (Ley 1581 de 2012). */
+  accepted_privacy: boolean;
 }
 
 export interface RegisterResult {
@@ -62,6 +65,10 @@ export async function registerAction(payload: RegisterPayload): Promise<Register
     return { success: false, error: 'La contraseña debe tener al menos 8 caracteres' };
   }
 
+  if (payload.accepted_privacy !== true) {
+    return { success: false, error: 'Debes autorizar el tratamiento de tus datos personales para crear la cuenta' };
+  }
+
   const email = payload.email.trim().toLowerCase();
   if (!email.endsWith('@unisabana.edu.co')) {
     return { success: false, error: 'El correo debe ser institucional (@unisabana.edu.co)' };
@@ -97,6 +104,9 @@ export async function registerAction(payload: RegisterPayload): Promise<Register
           student_code: payload.document_number?.trim() ?? '',
           phone: payload.phone?.trim() ?? '',
           role: payload.role,
+          // Constancia de la autorización (Habeas Data)
+          privacy_accepted_at: new Date().toISOString(),
+          privacy_policy_version: PRIVACY_POLICY_VERSION,
         },
       },
     });

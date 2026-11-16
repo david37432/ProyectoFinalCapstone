@@ -19,6 +19,7 @@ export default function RegisterPage() {
     document_number: string;
     phone: string;
     role: 'postulante' | 'reclutador';
+    accepted_privacy: boolean;
   }>({
     email: '',
     password: '',
@@ -27,6 +28,7 @@ export default function RegisterPage() {
     document_number: '',
     phone: '',
     role: 'postulante',
+    accepted_privacy: false,
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -43,6 +45,11 @@ export default function RegisterPage() {
 
     if (formData.password !== formData.confirmPassword) {
       setError('Las contraseñas no coinciden');
+      return;
+    }
+
+    if (!formData.accepted_privacy) {
+      setError('Debes autorizar el tratamiento de tus datos personales para crear la cuenta');
       return;
     }
 
@@ -65,6 +72,7 @@ export default function RegisterPage() {
       document_number: formData.document_number,
       phone: formData.phone,
       role: formData.role,
+      accepted_privacy: formData.accepted_privacy,
     };
 
     try {
@@ -354,6 +362,28 @@ export default function RegisterPage() {
                       disabled:bg-neutral-50 disabled:cursor-not-allowed
                       border-neutral-300 hover:border-neutral-400"
                   />
+                </div>
+                <div className="flex items-start gap-2">
+                  <input
+                    id="accepted_privacy"
+                    name="accepted_privacy"
+                    type="checkbox"
+                    checked={formData.accepted_privacy}
+                    onChange={(e) => setFormData({ ...formData, accepted_privacy: e.target.checked })}
+                    disabled={isLoading}
+                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-primary focus:ring-primary"
+                  />
+                  <label htmlFor="accepted_privacy" className="text-sm text-neutral-600">
+                    Autorizo el tratamiento de mis datos personales conforme a la{' '}
+                    <Link href="/privacidad" target="_blank" className="text-primary hover:underline">
+                      Política de Privacidad
+                    </Link>{' '}
+                    y acepto los{' '}
+                    <Link href="/terminos" target="_blank" className="text-primary hover:underline">
+                      Términos de uso
+                    </Link>
+                    .
+                  </label>
                 </div>
               </>
             )}
