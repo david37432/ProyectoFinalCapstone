@@ -62,6 +62,16 @@ export function profileFieldsFromRegistration(meta: RegistrationMetadata | null 
   };
 }
 
+/**
+ * El código estudiantil se fija una sola vez (en el registro) y no se puede cambiar después.
+ * Si ya hay uno guardado se conserva siempre; solo se acepta el enviado cuando todavía no existe.
+ */
+export function resolveStudentCode(existing: string | null | undefined, submitted: string | null | undefined): string {
+  const saved = (existing ?? '').trim();
+  if (saved) return saved;
+  return (submitted ?? '').trim();
+}
+
 /** Usa el valor guardado en el perfil y, si está vacío, el del registro. */
 export function preferFilled(saved: string | null | undefined, fromRegistration: string): string {
   return saved && saved.trim() ? saved : fromRegistration;

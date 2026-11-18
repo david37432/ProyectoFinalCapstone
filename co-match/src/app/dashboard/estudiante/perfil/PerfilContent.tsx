@@ -77,6 +77,8 @@ interface PerfilContentProps {
 export default function PerfilContent({ initialProfile, userId }: PerfilContentProps) {
   const [profile, setProfile] = useState<ProfileData>(() => initialProfile ?? getDefaultProfile());
   const [loading, setLoading] = useState(false);
+  // Con código ya registrado, el campo queda bloqueado
+  const [codeLocked] = useState(() => !!initialProfile?.student_code?.trim());
   const [newSkill, setNewSkill] = useState('');
   const [newInterest, setNewInterest] = useState('');
   const [showSkillSelect, setShowSkillSelect] = useState(false);
@@ -327,8 +329,13 @@ export default function PerfilContent({ initialProfile, userId }: PerfilContentP
                 value={profile.student_code || ''}
                 onChange={(e) => setProfile(prev => ({ ...prev, student_code: e.target.value }))}
                 placeholder="Añade tu código"
-                className="w-full px-4 py-2.5 rounded-lg border border-neutral-300 bg-white text-neutral-900 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                readOnly={codeLocked}
+                aria-readonly={codeLocked}
+                className={`w-full px-4 py-2.5 rounded-lg border border-neutral-300 text-neutral-900 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent ${codeLocked ? 'bg-neutral-100 cursor-not-allowed' : 'bg-white'}`}
               />
+              {codeLocked && (
+                <p className="mt-1 text-xs text-neutral-500">El código estudiantil no se puede modificar. Si es incorrecto, repórtalo desde Contacto.</p>
+              )}
             </div>
           </div>
         </section>

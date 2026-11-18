@@ -4,7 +4,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { getSupabaseConfig } from '@/lib/supabase/config';
-import { clampAvailability } from '@/lib/profile';
+import { clampAvailability, resolveStudentCode } from '@/lib/profile';
 
 export interface StudentProfileInput {
   full_name: string;
@@ -91,13 +91,17 @@ export async function updateStudentProfile(payload: StudentProfileInput): Promis
     const skillsArray = Array.isArray(payload.skills) ? payload.skills : [];
     const interestsArray = Array.isArray(payload.interests) ? payload.interests : [];
 
+    // El código estudiantil no se puede modificar una vez guardado
+    const { data: current } = await supabase.from('profiles').select('student_code').eq('id', user.id).maybeSingle();
+    const studentCode = resolveStudentCode(current?.student_code, payload.student_code);
+
     const profilePayload = {
       id: user.id,
       email: user.email,
       role: 'estudiante',
       full_name: payload.full_name || '',
       phone: payload.phone || '',
-      student_code: payload.student_code || '',
+      student_code: studentCode,
       career: payload.career || '',
       semester: payload.semester ? Number(payload.semester) : null,
       focus: payload.focus || '',

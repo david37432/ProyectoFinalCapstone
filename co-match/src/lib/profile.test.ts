@@ -8,6 +8,7 @@ import {
   AVATAR_MAX_BYTES,
   profileFieldsFromRegistration,
   preferFilled,
+  resolveStudentCode,
 } from './profile';
 
 describe('disponibilidad PAT', () => {
@@ -89,5 +90,18 @@ describe('preferFilled', () => {
     expect(preferFilled('', '300')).toBe('300');
     expect(preferFilled(null, '300')).toBe('300');
     expect(preferFilled('  ', '300')).toBe('300');
+  });
+});
+
+describe('resolveStudentCode (el código no se puede cambiar)', () => {
+  it('conserva siempre el código ya guardado', () => {
+    expect(resolveStudentCode('123456', '999999')).toBe('123456');
+    expect(resolveStudentCode(' 123456 ', '')).toBe('123456');
+  });
+
+  it('permite fijarlo solo si todavía no existe', () => {
+    expect(resolveStudentCode('', ' 777 ')).toBe('777');
+    expect(resolveStudentCode(null, '777')).toBe('777');
+    expect(resolveStudentCode(undefined, undefined)).toBe('');
   });
 });
