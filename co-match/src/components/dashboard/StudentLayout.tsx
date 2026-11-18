@@ -9,6 +9,7 @@ import {
   Briefcase,
   MessageSquare,
   Bell,
+  Library,
   User,
   Menu,
   X,
@@ -21,11 +22,34 @@ const navigation = [
   { href: '/dashboard/estudiante/explorar', label: 'Explorar', icon: Compass },
   { href: '/dashboard/estudiante/mis-apps', label: 'Mis Apps', icon: Briefcase },
   { href: '/dashboard/estudiante/mensajes', label: 'Mensajes', icon: MessageSquare },
+  { href: '/dashboard/estudiante/repositorio', label: 'Repositorio', icon: Library },
   { href: '/dashboard/estudiante/avisos', label: 'Avisos', icon: Bell },
   { href: '/dashboard/estudiante/perfil', label: 'Perfil', icon: User },
 ];
 
-export default function StudentLayout({ children }: { children: React.ReactNode }) {
+interface StudentLayoutProps {
+  children: React.ReactNode;
+  userName?: string;
+  avatarUrl?: string | null;
+}
+
+function UserBadge({ userName, avatarUrl }: { userName: string; avatarUrl?: string | null }) {
+  return (
+    <div className="flex items-center gap-3">
+      <p className="hidden sm:block text-sm font-medium text-neutral-900 max-w-[12rem] truncate">{userName}</p>
+      <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center overflow-hidden flex-shrink-0" aria-hidden="true">
+        {avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-white font-bold text-sm">{userName.charAt(0).toUpperCase()}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function StudentLayout({ children, userName = 'Estudiante', avatarUrl = null }: StudentLayoutProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -73,7 +97,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
             <Menu className="w-6 h-6" />
           </button>
           <h1 className="font-bold text-xl text-neutral-900">CO-MATCH</h1>
-          <div className="w-12" />
+          <UserBadge userName={userName} avatarUrl={avatarUrl} />
         </header>
 
         <aside
@@ -124,7 +148,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
         </main>
 
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200 z-40 lg:hidden">
-          <div className="grid grid-cols-5 gap-1 px-2 py-2">
+          <div className="grid grid-cols-6 gap-1 px-2 py-2">
             {navigation.map((item) => (
               <Link
                 key={item.href}
@@ -184,13 +208,16 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
         <header className="sticky top-0 z-30 bg-white border-b border-neutral-200">
           <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
             <h1 className="text-2xl font-bold text-neutral-900">Oportunidades</h1>
-            <Link
-              href="/dashboard/estudiante/avisos"
-              className="p-2 rounded-lg text-neutral-600 hover:bg-neutral-100 relative"
-              aria-label="Ver avisos"
-            >
-              <Bell className="w-5 h-5" />
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link
+                href="/dashboard/estudiante/avisos"
+                className="p-2 rounded-lg text-neutral-600 hover:bg-neutral-100 relative"
+                aria-label="Ver avisos"
+              >
+                <Bell className="w-5 h-5" />
+              </Link>
+              <UserBadge userName={userName} avatarUrl={avatarUrl} />
+            </div>
           </div>
         </header>
         <div className="max-w-7xl mx-auto px-6 py-6">

@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { logoutAction } from '@/app/auth/login/actions';
 import { cn } from '@/lib/utils';
-import { LayoutDashboard, PlusCircle, Users, MessageCircle, ClipboardList, LogOut, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, Users, MessageCircle, ClipboardList, Library, LogOut, ChevronLeft, ChevronRight, X } from 'lucide-react';
 
 interface AdminSidebarProps {
   isCollapsed: boolean;
@@ -20,6 +20,7 @@ const navigation = [
   { name: 'Candidatos', href: '/dashboard/dependencia/candidatos', icon: Users },
   { name: 'Mensajes', href: '/dashboard/dependencia/mensajes', icon: MessageCircle },
   { name: 'Seguimiento', href: '/dashboard/dependencia/seguimiento', icon: ClipboardList },
+  { name: 'Repositorio', href: '/dashboard/dependencia/repositorio', icon: Library },
 ];
 
 export function AdminSidebar({ isCollapsed, onToggle, isMobileOpen, onMobileClose }: AdminSidebarProps) {
